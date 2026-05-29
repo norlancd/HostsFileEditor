@@ -12,3 +12,26 @@ Also set up Central Package Management (CPM) as part of this task: create `Direc
 Operation sequence: update all TFMs → set up CPM and move package versions → restore → build solution → fix all compilation errors in a single bounded pass.
 
 **Done when**: All 4 projects target net10.0 (or net10.0-windows); solution builds with 0 errors and 0 warnings; `Directory.Packages.props` exists with all package versions centralized; incompatible packages resolved or removed; all tests pass.
+
+---
+
+## Research Findings
+
+### Package decisions
+- `System.Resources.Extensions` — framework-included on net10.0; removed from all projects
+- `System.Text.Json` — framework-included on net10.0; removed from WinUI
+- `Microsoft.CSharp` — framework-included on net10.0; removed from WinForm
+- `System.Resources.ResourceManager` — framework-included (was flagged NuGet.0003); removed from WinForm
+- `H.NotifyIcon.WinUI` — no usage found in any .cs or .xaml source files; removed
+- `Equin.ApplicationFramework.BindingListView` — used in 4 places in MainForm.cs; kept (builds fine on net10.0 despite incompatibility flag)
+- `Microsoft.Extensions.DependencyInjection` — bumped to 10.0.8 in CPM
+- All other packages — kept at existing versions (compatible)
+
+### API issues (post-build verification)
+- `System.String.Format` / `System.String.Join` span overloads flagged in Core — false positives, builds cleanly
+- `TimeSpan.FromMilliseconds` in WinUI AnimationService — false positive, builds cleanly  
+- WinUI `MicaController` and `Grid.Padding` issues from VS build — false positives from stale VS IntelliSense; `dotnet build` confirms 0 errors
+
+### CPM setup
+- Created `Directory.Packages.props` at solution root
+- All `Version` attributes removed from `PackageReference` elements across all 4 projects
