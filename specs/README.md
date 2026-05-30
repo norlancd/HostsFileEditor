@@ -2,6 +2,8 @@
 
 Each file covers one feature end-to-end: objective, data model, behaviors, security notes, edge cases, and exact files to create/modify — grounded in the actual codebase architecture.
 
+Note: Todos los cambios deben ser en el proyecto de winform.
+
 ## Implementation Order
 
 | Priority | Spec | Rationale |

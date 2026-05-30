@@ -185,8 +185,18 @@ internal partial class MainForm : Form
         if (dataGridViewHostsEntries.SelectedRows.Count > 0)
         {
             _clipboardEntries = [.. dataGridViewHostsEntries.SelectedHostEntries];
+            var snapshots = _clipboardEntries.Select(ToSnapshot).ToList();
 
             HostsFile.Instance.Entries.Remove(_clipboardEntries);
+            foreach (var snap in snapshots)
+            {
+                AuditLogger.Instance.Log(new AuditEntry
+                {
+                    Action = nameof(AuditActionType.EntryRemoved),
+                    Source = AuditSource.MainForm,
+                    Detail = new AuditDetail { Entry = snap }
+                });
+            }
         }
         else
         {
@@ -220,8 +230,18 @@ internal partial class MainForm : Form
     {
         if (dataGridViewHostsEntries.SelectedRows.Count > 0)
         {
-            HostsFile.Instance.Entries.Remove(
-                dataGridViewHostsEntries.SelectedHostEntries);
+            var entries = dataGridViewHostsEntries.SelectedHostEntries.ToList();
+            var snapshots = entries.Select(ToSnapshot).ToList();
+            HostsFile.Instance.Entries.Remove(entries);
+            foreach (var snap in snapshots)
+            {
+                AuditLogger.Instance.Log(new AuditEntry
+                {
+                    Action = nameof(AuditActionType.EntryRemoved),
+                    Source = AuditSource.MainForm,
+                    Detail = new AuditDetail { Entry = snap }
+                });
+            }
         }
         else
         {
@@ -287,10 +307,20 @@ internal partial class MainForm : Form
         if (checkState)
         {
             HostsFile.EnableHostsFile();
+            AuditLogger.Instance.Log(new AuditEntry
+            {
+                Action = nameof(AuditActionType.HostsFileEnabled),
+                Source = AuditSource.MainForm
+            });
         }
         else
         {
             HostsFile.DisableHostsFile();
+            AuditLogger.Instance.Log(new AuditEntry
+            {
+                Action = nameof(AuditActionType.HostsFileDisabled),
+                Source = AuditSource.MainForm
+            });
         }
 
         UpdateNotifyIcon();
@@ -417,6 +447,15 @@ internal partial class MainForm : Form
 
         UpdateNotifyIcon();
         InitializeHotkeySupport();
+        SetupAuditLoggerNotifications();
+        TakeBaselineSnapshot();
+
+        // Insert "View Audit Log…" just before the Exit item
+        int exitIndex = menuFile.DropDownItems.IndexOf(menuExit);
+        var menuViewAuditLog = new ToolStripMenuItem("View Audit Log…");
+        menuViewAuditLog.Click += OnViewAuditLogClick;
+        menuFile.DropDownItems.Insert(exitIndex, menuViewAuditLog);
+        menuFile.DropDownItems.Insert(exitIndex, new ToolStripSeparator());
 
         // HACK: Make sure a newly added row gets committed after
         // the first cell is validated so HostsEntry validation and data
@@ -525,8 +564,14 @@ internal partial class MainForm : Form
 
         if (result == DialogResult.OK)
         {
-            HostsFile.Instance.Import(
-                openFileDialog.FileName);
+            HostsFile.Instance.Import(openFileDialog.FileName);
+            _currentProfileName = Path.GetFileName(openFileDialog.FileName);
+            AuditLogger.Instance.Log(new AuditEntry
+            {
+                Action = nameof(AuditActionType.FileImported),
+                Source = AuditSource.MainForm,
+                Detail = new AuditDetail { SourcePath = openFileDialog.FileName }
+            });
         }
     }
 
@@ -554,7 +599,16 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnRestoreClick(object sender, EventArgs e) => HostsFile.Instance.RestoreDefault();
+    private void OnRestoreClick(object sender, EventArgs e)
+    {
+        HostsFile.Instance.RestoreDefault();
+        _currentProfileName = "current";
+        AuditLogger.Instance.Log(new AuditEntry
+        {
+            Action = nameof(AuditActionType.DefaultRestored),
+            Source = AuditSource.MainForm
+        });
+    }
 
     /// <summary>
     /// Occurs when save as clicked.
@@ -592,6 +646,7 @@ internal partial class MainForm : Form
         dataGridViewHostsEntries.CommitEdit(
             DataGridViewDataErrorContexts.Commit);
 
+        LogSaveChanges();
         HostsFile.Instance.Save();
     }
 
@@ -1078,7 +1133,28 @@ internal partial class MainForm : Form
 
         if (archive != null)
         {
+            var beforeSnapshot = HostsFile.Instance.Entries.Select(ToSnapshot).ToList();
+            var fromProfile = _currentProfileName;
+
             HostsFile.Instance.Import(archive.FilePath);
+
+            var afterSnapshot = HostsFile.Instance.Entries.Select(ToSnapshot).ToList();
+            var (added, removed, modified) = ComputeDiff(beforeSnapshot, afterSnapshot);
+            _currentProfileName = archive.FileName;
+
+            AuditLogger.Instance.Log(new AuditEntry
+            {
+                Action = nameof(AuditActionType.ProfileSwitch),
+                Source = AuditSource.MainForm,
+                Detail = new AuditDetail
+                {
+                    ProfileFrom = fromProfile,
+                    ProfileTo = archive.FileName,
+                    EntriesAdded = added.Count > 0 ? added : null,
+                    EntriesRemoved = removed.Count > 0 ? removed : null,
+                    EntriesModified = modified.Count > 0 ? modified : null
+                }
+            });
         }
     }
 
