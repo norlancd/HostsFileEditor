@@ -18,6 +18,21 @@ internal sealed class HostsArchiveDataGridView : DataGridView
         AllowDrop = false;
         AllowUserToAddRows = false;
         AllowUserToOrderColumns = false;
+
+        var menu = new ContextMenuStrip();
+        var menuProfileSettings = new ToolStripMenuItem("Profile Settings…");
+        menuProfileSettings.Click += OnProfileSettingsClick;
+        menu.Items.Add(menuProfileSettings);
+        ContextMenuStrip = menu;
+    }
+
+    private void OnProfileSettingsClick(object? sender, EventArgs e)
+    {
+        var archive = CurrentHostsArchive;
+        if (archive == null) return;
+
+        using var dlg = new ProfileSettingsForm(archive);
+        dlg.ShowDialog(FindForm());
     }
 
     /// <summary>

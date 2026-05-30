@@ -33,6 +33,28 @@ public class HostsArchive
         .Split(Path.DirectorySeparatorChar)
         .LastOrDefault() ?? string.Empty;
 
+    private HostsProfileMetadata? _metadata;
+    private bool _metadataLoaded;
+
+    public HostsProfileMetadata? Metadata
+    {
+        get
+        {
+            if (!_metadataLoaded)
+            {
+                _metadata = string.IsNullOrEmpty(FilePath) ? null : HostsProfileMetadata.Load(FilePath);
+                _metadataLoaded = true;
+            }
+            return _metadata;
+        }
+    }
+
+    public void ReloadMetadata()
+    {
+        _metadataLoaded = false;
+        _metadata = null;
+    }
+
     public static bool Validate(string filePath, out string error)
     {
         var isValid = false;

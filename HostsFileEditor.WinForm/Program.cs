@@ -25,6 +25,7 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.ThreadException += OnApplicationThreadException;
+            Application.ApplicationExit += (_, _) => HotkeyRegistry.UnregisterAll();
 
             _mainForm = new MainForm();
             Application.Run(_mainForm);

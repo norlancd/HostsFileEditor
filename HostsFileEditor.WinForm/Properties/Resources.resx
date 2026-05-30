@@ -133,6 +133,12 @@
   <data name="LoseChangesQuestion" xml:space="preserve">
     <value>Are you sure you want to refresh hosts file?  You will lose any unsaved changes.</value>
   </data>
+  <data name="ProfileFileNotFound" xml:space="preserve">
+    <value>Profile '{0}' file not found on disk.</value>
+  </data>
+  <data name="ProfileHotkeyConflict" xml:space="preserve">
+    <value>Hotkey {0} for profile '{1}' could not be registered — already in use by another application.</value>
+  </data>
   <data name="ArchiveExists" xml:space="preserve">
     <value>Archive name already exists!</value>
   </data>

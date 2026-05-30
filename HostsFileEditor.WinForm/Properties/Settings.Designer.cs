@@ -106,5 +106,16 @@ namespace HostsFileEditor.Properties {
                 this["SplitterWidth"] = value;
             }
         }
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool DiffBeforeSwitchEnabled {
+            get {
+                return ((bool)(this["DiffBeforeSwitchEnabled"]));
+            }
+            set {
+                this["DiffBeforeSwitchEnabled"] = value;
+            }
+        }
     }
 }

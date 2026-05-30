@@ -59,6 +59,11 @@ internal partial class MainForm : Form
         columnHostnames.DefaultCellStyle.NullValue = null;
     }
 
+    private const int WmHotkey = 0x0312;
+
+    private ToolStripMenuItem? _menuTrayProfiles;
+    private ToolStripMenuItem? _menuBarProfiles;
+
     /// <inheritdoc />
     protected override void WndProc(ref Message message)
     {
@@ -70,6 +75,13 @@ internal partial class MainForm : Form
             }
 
             this.ShowOrActivate();
+        }
+        else if (message.Msg == WmHotkey)
+        {
+            int id = message.WParam.ToInt32();
+            var profile = HotkeyRegistry.GetProfileById(id);
+            if (profile != null)
+                ProfileSwitcher.Activate(profile, ProfileSwitcher.TriggerSource.TrayHotkey);
         }
 
         base.WndProc(ref message);
@@ -404,6 +416,7 @@ internal partial class MainForm : Form
         buttonDisable.Checked = !HostsFile.IsEnabled;
 
         UpdateNotifyIcon();
+        InitializeHotkeySupport();
 
         // HACK: Make sure a newly added row gets committed after
         // the first cell is validated so HostsEntry validation and data
@@ -726,6 +739,207 @@ internal partial class MainForm : Form
     /// The event arguments.
     /// </param>
     private void OnVisibleChanged(object sender, EventArgs e) => ShowInTaskbar = Visible;
+
+    private void InitializeHotkeySupport()
+    {
+        ProfileSwitcher.ProfileError = msg =>
+            notifyIcon.ShowBalloonTip(3000, "Profile Error", msg, ToolTipIcon.Error);
+
+        HotkeyRegistry.HotkeyConflictNotify += (archive, meta) =>
+        {
+            var chord = $"{meta.HotkeyModifiers}+{meta.HotkeyKey}";
+            notifyIcon.ShowBalloonTip(
+                3000,
+                "Hotkey Conflict",
+                string.Format(Properties.Resources.ProfileHotkeyConflict, chord, archive.FileName),
+                ToolTipIcon.Warning);
+        };
+
+        HotkeyRegistry.Initialize(Handle);
+
+        // Build initial menus
+        RebuildProfilesMenus();
+
+        // Rebuild on list changes
+        HostsArchiveList.Instance.ListChanged += (_, _) => RebuildProfilesMenus();
+        ProfileSwitcher.ActiveArchiveChanged += RebuildProfilesMenus;
+    }
+
+    private void RebuildProfilesMenus()
+    {
+        if (InvokeRequired)
+        {
+            Invoke(RebuildProfilesMenus);
+            return;
+        }
+
+        // Tray menu item
+        if (_menuTrayProfiles == null)
+        {
+            _menuTrayProfiles = new ToolStripMenuItem("Profiles");
+            int exitIndex = contextMenuTray.Items.IndexOf(contextMenuExit);
+            contextMenuTray.Items.Insert(exitIndex, new ToolStripSeparator());
+            contextMenuTray.Items.Insert(exitIndex, _menuTrayProfiles);
+        }
+
+        // Menu bar item — insert between View and Tools
+        if (_menuBarProfiles == null)
+        {
+            _menuBarProfiles = new ToolStripMenuItem("Profiles");
+            int toolsIndex = menuStrip.Items.IndexOf(menuTools);
+            menuStrip.Items.Insert(toolsIndex, _menuBarProfiles);
+        }
+
+        PopulateProfilesMenu(_menuTrayProfiles);
+        PopulateProfilesMenu(_menuBarProfiles);
+    }
+
+    private void PopulateProfilesMenu(ToolStripMenuItem parent)
+    {
+        parent.DropDownItems.Clear();
+
+        var menuSaveCurrent = new ToolStripMenuItem("Save Current as Profile…");
+        menuSaveCurrent.Click += OnSaveCurrentAsProfileClick;
+        parent.DropDownItems.Add(menuSaveCurrent);
+
+        var menuNewEmpty = new ToolStripMenuItem("New Empty Profile…");
+        menuNewEmpty.Click += OnNewEmptyProfileClick;
+        parent.DropDownItems.Add(menuNewEmpty);
+
+        parent.DropDownItems.Add(new ToolStripSeparator());
+
+        var menuDefault = new ToolStripMenuItem("Default")
+        {
+            Checked = ProfileSwitcher.ActiveArchive == null
+        };
+        menuDefault.Click += (_, _) => ProfileSwitcher.ClearActive();
+        parent.DropDownItems.Add(menuDefault);
+
+        var profiles = HostsArchiveList.Instance
+            .OrderBy(a => a.Metadata?.SortOrder ?? 0)
+            .ThenBy(a => a.FileName)
+            .ToList();
+
+        foreach (var archive in profiles)
+        {
+            var label = archive.FileName;
+            var meta = archive.Metadata;
+            if (meta?.HasHotkey == true)
+                label += $"  ({FormatHotkeyChord(meta.HotkeyModifiers, meta.HotkeyKey)})";
+
+            var profileItem = new ToolStripMenuItem(label)
+            {
+                Checked = ProfileSwitcher.ActiveArchive == archive
+            };
+
+            bool exists = File.Exists(archive.FilePath);
+            var captured = archive;
+
+            var menuActivate = new ToolStripMenuItem("Activate") { Enabled = exists };
+            menuActivate.Click += (_, _) =>
+                ProfileSwitcher.Activate(captured, ProfileSwitcher.TriggerSource.TrayMenu);
+
+            var menuClone = new ToolStripMenuItem("Clone…") { Enabled = exists };
+            menuClone.Click += (_, _) => OnCloneProfileClick(captured);
+
+            var menuSettings = new ToolStripMenuItem("Profile Settings…");
+            menuSettings.Click += (_, _) =>
+            {
+                using var dlg = new ProfileSettingsForm(captured);
+                dlg.ShowDialog(this);
+            };
+
+            var menuDelete = new ToolStripMenuItem("Delete");
+            menuDelete.Click += (_, _) => OnDeleteProfileClick(captured);
+
+            profileItem.DropDownItems.Add(menuActivate);
+            profileItem.DropDownItems.Add(new ToolStripSeparator());
+            profileItem.DropDownItems.Add(menuClone);
+            profileItem.DropDownItems.Add(menuSettings);
+            profileItem.DropDownItems.Add(new ToolStripSeparator());
+            profileItem.DropDownItems.Add(menuDelete);
+
+            if (!exists)
+                profileItem.ForeColor = SystemColors.GrayText;
+
+            parent.DropDownItems.Add(profileItem);
+        }
+    }
+
+    private void OnSaveCurrentAsProfileClick(object? sender, EventArgs e)
+    {
+        using var inputDialog = new InputForm();
+        inputDialog.Text = Text;
+        inputDialog.Prompt = Properties.Resources.InputArchivePrompt;
+
+        if (inputDialog.ShowDialog(this) == DialogResult.OK)
+        {
+            HostsFile.Instance.Archive(inputDialog.Input);
+        }
+    }
+
+    private void OnNewEmptyProfileClick(object? sender, EventArgs e)
+    {
+        using var inputDialog = new InputForm();
+        inputDialog.Text = Text;
+        inputDialog.Prompt = Properties.Resources.InputArchivePrompt;
+
+        if (inputDialog.ShowDialog(this) == DialogResult.OK)
+        {
+            var name = inputDialog.Input;
+            var filePath = Path.Combine(HostsArchiveList.ArchiveDirectory, name);
+
+            Directory.CreateDirectory(HostsArchiveList.ArchiveDirectory);
+
+            // Write default Windows hosts content
+            File.WriteAllText(filePath, HostsFileEditor.Properties.Resources.hosts);
+
+            HostsArchiveList.Instance.Add(new HostsArchive { FilePath = filePath });
+        }
+    }
+
+    private void OnCloneProfileClick(HostsArchive source)
+    {
+        using var inputDialog = new InputForm();
+        inputDialog.Text = Text;
+        inputDialog.Prompt = Properties.Resources.InputArchivePrompt;
+
+        if (inputDialog.ShowDialog(this) == DialogResult.OK)
+        {
+            var destPath = Path.Combine(HostsArchiveList.ArchiveDirectory, inputDialog.Input);
+            File.Copy(source.FilePath, destPath);
+            HostsArchiveList.Instance.Add(new HostsArchive { FilePath = destPath });
+        }
+    }
+
+    private void OnDeleteProfileClick(HostsArchive archive)
+    {
+        var result = MessageBox.Show(
+            this,
+            $"Delete profile '{archive.FileName}'?",
+            Text,
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+
+        if (result == DialogResult.Yes)
+        {
+            if (ProfileSwitcher.ActiveArchive == archive)
+                ProfileSwitcher.ClearActive();
+
+            HostsArchiveList.Instance.Delete(archive);
+        }
+    }
+
+    private static string FormatHotkeyChord(int modifiers, int key)
+    {
+        var parts = new List<string>();
+        if ((modifiers & 2) != 0) parts.Add("Ctrl");
+        if ((modifiers & 4) != 0) parts.Add("Shift");
+        if ((modifiers & 1) != 0) parts.Add("Alt");
+        parts.Add(((Keys)key).ToString());
+        return string.Join("+", parts);
+    }
 
     /// <summary>
     /// Updates the notify icon.

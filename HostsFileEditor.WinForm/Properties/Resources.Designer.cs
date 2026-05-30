@@ -78,7 +78,19 @@ namespace HostsFileEditor.Properties {
                 return ResourceManager.GetString("ArchiveExists", resourceCulture);
             }
         }
-        
+
+        internal static string ProfileFileNotFound {
+            get {
+                return ResourceManager.GetString("ProfileFileNotFound", resourceCulture);
+            }
+        }
+
+        internal static string ProfileHotkeyConflict {
+            get {
+                return ResourceManager.GetString("ProfileHotkeyConflict", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>

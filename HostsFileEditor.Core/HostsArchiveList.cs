@@ -33,7 +33,17 @@ public class HostsArchiveList : BindingList<HostsArchive>
             File.Delete(archive.FilePath);
         }
 
+        // Remove sidecar metadata if it exists
+        archive.Metadata?.Delete(archive.FilePath);
+
         Remove(archive);
+    }
+
+    public void SaveMetadata(HostsArchive archive)
+    {
+        ArgumentNullException.ThrowIfNull(archive);
+        archive.Metadata?.Save(archive.FilePath);
+        archive.ReloadMetadata();
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "BindingList used only for simple collection change notifications; PropertyDescriptor reflection not exercised.")]
@@ -47,7 +57,7 @@ public class HostsArchiveList : BindingList<HostsArchive>
             {
                 var files = Directory.GetFiles(EffectiveArchiveDirectory);
 
-                foreach (var file in files)
+                foreach (var file in files.Where(f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
                 {
                     Add(new HostsArchive { FilePath = file });
                 }
