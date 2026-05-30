@@ -464,7 +464,10 @@ internal partial class MainForm : Form
         UpdateNotifyIcon();
         InitializeHotkeySupport();
         SetupAuditLoggerNotifications();
+        AuditLogger.Instance.Initialize(); // after subscription so IntegrityFailed is handled
         TakeBaselineSnapshot();
+        SetupRollbackTimer();
+        RollbackTimerService.Instance.RecoverFromRestart();
 
         // Add auto-backup toggle to Tools menu
         menuTools.DropDownItems.Add(new ToolStripSeparator());
@@ -961,7 +964,11 @@ internal partial class MainForm : Form
             var menuDelete = new ToolStripMenuItem("Delete");
             menuDelete.Click += (_, _) => OnDeleteProfileClick(captured);
 
+            var menuActivateTimer = new ToolStripMenuItem("Activate temporarily…") { Enabled = exists };
+            menuActivateTimer.Click += (_, _) => OnActivateWithTimerClick(captured);
+
             profileItem.DropDownItems.Add(menuActivate);
+            profileItem.DropDownItems.Add(menuActivateTimer);
             profileItem.DropDownItems.Add(new ToolStripSeparator());
             profileItem.DropDownItems.Add(menuClone);
             profileItem.DropDownItems.Add(menuSettings);
@@ -1003,9 +1010,10 @@ internal partial class MainForm : Form
 
                 var menuRestore = new ToolStripMenuItem("Restore");
                 menuRestore.Click += (_, _) =>
-                {
                     ProfileSwitcher.Activate(captured, ProfileSwitcher.TriggerSource.TrayMenu);
-                };
+
+                var menuRestoreTimer = new ToolStripMenuItem("Restore temporarily…");
+                menuRestoreTimer.Click += (_, _) => OnActivateWithTimerClick(captured);
 
                 var menuSaveAsProfile = new ToolStripMenuItem("Save as Profile…");
                 menuSaveAsProfile.Click += (_, _) => OnSaveBackupAsProfileClick(captured);
@@ -1017,6 +1025,7 @@ internal partial class MainForm : Form
                 };
 
                 backupItem.DropDownItems.Add(menuRestore);
+                backupItem.DropDownItems.Add(menuRestoreTimer);
                 backupItem.DropDownItems.Add(new ToolStripSeparator());
                 backupItem.DropDownItems.Add(menuSaveAsProfile);
                 backupItem.DropDownItems.Add(new ToolStripSeparator());

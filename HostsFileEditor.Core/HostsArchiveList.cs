@@ -60,7 +60,8 @@ public class HostsArchiveList : BindingList<HostsArchive>
                 var files = Directory.GetFiles(EffectiveArchiveDirectory)
                     .Where(f =>
                         !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase) &&
-                        !f.StartsWith(autoBackupDir, StringComparison.OrdinalIgnoreCase));
+                        !f.StartsWith(autoBackupDir, StringComparison.OrdinalIgnoreCase) &&
+                        !Path.GetFileName(f).StartsWith("__rollback_", StringComparison.OrdinalIgnoreCase));
 
                 foreach (var file in files)
                     Add(new HostsArchive { FilePath = file });

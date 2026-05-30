@@ -28,7 +28,6 @@ internal static class Program
             Application.ApplicationExit += (_, _) => HotkeyRegistry.UnregisterAll();
 
             _mainForm = new MainForm();
-            AuditLogger.Instance.Initialize();
             Application.Run(_mainForm);
         }
         else
