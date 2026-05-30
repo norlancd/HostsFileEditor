@@ -55,11 +55,24 @@ public class HostsArchiveList : BindingList<HostsArchive>
 
             if (Directory.Exists(EffectiveArchiveDirectory))
             {
-                var files = Directory.GetFiles(EffectiveArchiveDirectory);
+                // User-created archives — immediate children only, skip __autobak and .json sidecars
+                var autoBackupDir = AutoBackupService.AutoBackupDirectory;
+                var files = Directory.GetFiles(EffectiveArchiveDirectory)
+                    .Where(f =>
+                        !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase) &&
+                        !f.StartsWith(autoBackupDir, StringComparison.OrdinalIgnoreCase));
 
-                foreach (var file in files.Where(f => !f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
-                {
+                foreach (var file in files)
                     Add(new HostsArchive { FilePath = file });
+
+                // Auto-backups — enumerated last so they appear below user archives
+                if (Directory.Exists(autoBackupDir))
+                {
+                    var backups = Directory.GetFiles(autoBackupDir)
+                        .OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var file in backups)
+                        Add(new HostsArchive { FilePath = file });
                 }
             }
         });

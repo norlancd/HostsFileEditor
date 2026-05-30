@@ -123,6 +123,7 @@ public class HostsFile : INotifyPropertyChanged
 
     public void Save()
     {
+        AutoBackupService.Instance.CreateBackup();
         SaveAs(_filePath);
         NativeMethods.FlushDns();
     }

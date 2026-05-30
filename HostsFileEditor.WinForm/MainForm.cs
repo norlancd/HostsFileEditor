@@ -415,7 +415,7 @@ internal partial class MainForm : Form
         };
 
         bindingSourceArchive.DataSource = _hostsArchiveView;
-        _hostsArchiveView.Sort = nameof(HostsArchive.FileName);
+        // No forced sort — Refresh() already orders: user profiles first, then auto-backups newest-first
 
         bindingSourceHostFile.DataSource = HostsFile.Instance;
 
@@ -445,10 +445,46 @@ internal partial class MainForm : Form
         menuDisable.Checked = !HostsFile.IsEnabled;
         buttonDisable.Checked = !HostsFile.IsEnabled;
 
+        // Rename Archive → Profiles throughout the UI
+        menuViewArchive.Text = "View Profiles";
+        buttonViewArchive.Text = "View Profiles";
+        buttonViewArchive.ToolTipText = "View Profiles";
+
+        // Rename the header label inside the right panel
+        var panelLabel = toolStripArchive.Items.OfType<ToolStripLabel>().FirstOrDefault();
+        if (panelLabel != null) panelLabel.Text = "Profiles";
+
+        // Update Load/Delete button tooltips
+        buttonLoadArchive.ToolTipText = "Load selected profile";
+        buttonDeleteArchive.ToolTipText = "Delete selected profile";
+
+        // Hide "Archive" from File menu — duplicate of Profiles > Save Current as Profile
+        menuArchive.Visible = false;
+
         UpdateNotifyIcon();
         InitializeHotkeySupport();
         SetupAuditLoggerNotifications();
         TakeBaselineSnapshot();
+
+        // Add auto-backup toggle to Tools menu
+        menuTools.DropDownItems.Add(new ToolStripSeparator());
+        var menuAutoBackup = new ToolStripMenuItem("Auto-backup on Save")
+        {
+            Checked = AutoBackupService.Enabled,
+            CheckOnClick = true
+        };
+        menuAutoBackup.CheckedChanged += (_, _) =>
+        {
+            AutoBackupService.Enabled = menuAutoBackup.Checked;
+        };
+        menuTools.DropDownItems.Add(menuAutoBackup);
+
+        // Subscribe to backup errors so we can show a balloon
+        AutoBackupService.Instance.BackupError += (_, msg) =>
+        {
+            if (InvokeRequired) Invoke(() => notifyIcon.ShowBalloonTip(4000, "Auto-backup", msg, ToolTipIcon.Warning));
+            else notifyIcon.ShowBalloonTip(4000, "Auto-backup", msg, ToolTipIcon.Warning);
+        };
 
         // Insert "View Audit Log…" just before the Exit item
         int exitIndex = menuFile.DropDownItems.IndexOf(menuExit);
@@ -648,6 +684,7 @@ internal partial class MainForm : Form
 
         LogSaveChanges();
         HostsFile.Instance.Save();
+        HostsArchiveList.Instance.Refresh(); // shows new auto-backup in archive panel
     }
 
     /// <summary>
@@ -853,6 +890,21 @@ internal partial class MainForm : Form
     {
         parent.DropDownItems.Clear();
 
+        var menuTogglePanel = new ToolStripMenuItem("View Profiles Panel")
+        {
+            Checked = !splitContainer.Panel2Collapsed
+        };
+        menuTogglePanel.Click += (_, _) =>
+        {
+            var show = splitContainer.Panel2Collapsed;
+            splitContainer.Panel2Collapsed = !show;
+            menuViewArchive.Checked = show;
+            buttonViewArchive.Checked = show;
+            RebuildProfilesMenus();
+        };
+        parent.DropDownItems.Add(menuTogglePanel);
+        parent.DropDownItems.Add(new ToolStripSeparator());
+
         var menuSaveCurrent = new ToolStripMenuItem("Save Current as Profile…");
         menuSaveCurrent.Click += OnSaveCurrentAsProfileClick;
         parent.DropDownItems.Add(menuSaveCurrent);
@@ -870,7 +922,9 @@ internal partial class MainForm : Form
         menuDefault.Click += (_, _) => ProfileSwitcher.ClearActive();
         parent.DropDownItems.Add(menuDefault);
 
+        // ── User-created profiles ──────────────────────────────────────────
         var profiles = HostsArchiveList.Instance
+            .Where(a => !a.IsAutoBackup)
             .OrderBy(a => a.Metadata?.SortOrder ?? 0)
             .ThenBy(a => a.FileName)
             .ToList();
@@ -918,6 +972,79 @@ internal partial class MainForm : Form
                 profileItem.ForeColor = SystemColors.GrayText;
 
             parent.DropDownItems.Add(profileItem);
+        }
+
+        // ── Auto-backups section ──────────────────────────────────────────
+        var autoBackups = HostsArchiveList.Instance
+            .Where(a => a.IsAutoBackup)
+            .ToList();
+
+        if (autoBackups.Count > 0)
+        {
+            parent.DropDownItems.Add(new ToolStripSeparator());
+
+            var header = new ToolStripMenuItem($"Auto Backups ({autoBackups.Count})")
+            {
+                Enabled = false,
+                ForeColor = SystemColors.GrayText
+            };
+            parent.DropDownItems.Add(header);
+
+            foreach (var backup in autoBackups)
+            {
+                var captured = backup;
+                bool exists = File.Exists(backup.FilePath);
+
+                var backupItem = new ToolStripMenuItem(backup.DisplayName)
+                {
+                    Enabled = exists
+                };
+                if (!exists) backupItem.ForeColor = SystemColors.GrayText;
+
+                var menuRestore = new ToolStripMenuItem("Restore");
+                menuRestore.Click += (_, _) =>
+                {
+                    ProfileSwitcher.Activate(captured, ProfileSwitcher.TriggerSource.TrayMenu);
+                };
+
+                var menuSaveAsProfile = new ToolStripMenuItem("Save as Profile…");
+                menuSaveAsProfile.Click += (_, _) => OnSaveBackupAsProfileClick(captured);
+
+                var menuDeleteBackup = new ToolStripMenuItem("Delete");
+                menuDeleteBackup.Click += (_, _) =>
+                {
+                    HostsArchiveList.Instance.Delete(captured);
+                };
+
+                backupItem.DropDownItems.Add(menuRestore);
+                backupItem.DropDownItems.Add(new ToolStripSeparator());
+                backupItem.DropDownItems.Add(menuSaveAsProfile);
+                backupItem.DropDownItems.Add(new ToolStripSeparator());
+                backupItem.DropDownItems.Add(menuDeleteBackup);
+
+                parent.DropDownItems.Add(backupItem);
+            }
+        }
+    }
+
+    private void OnSaveBackupAsProfileClick(HostsArchive backup)
+    {
+        using var inputDialog = new InputForm();
+        inputDialog.Text = Text;
+        inputDialog.Prompt = Properties.Resources.InputArchivePrompt;
+
+        if (inputDialog.ShowDialog(this) != DialogResult.OK) return;
+
+        var destPath = Path.Combine(HostsArchiveList.ArchiveDirectory, inputDialog.Input);
+        try
+        {
+            Directory.CreateDirectory(HostsArchiveList.ArchiveDirectory);
+            File.Copy(backup.FilePath, destPath, overwrite: false);
+            HostsArchiveList.Instance.Add(new HostsArchive { FilePath = destPath });
+        }
+        catch (IOException ex)
+        {
+            MessageBox.Show(this, ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1197,6 +1324,8 @@ internal partial class MainForm : Form
 
         HostsEntry.AutoPingIPAddress = settings.AutoPingIPAddresses;
         HostsFile.RemoveDefaultText = settings.RemoveDefaultText;
+        AutoBackupService.Enabled = settings.AutoBackupEnabled;
+        AutoBackupService.MaxCount = settings.AutoBackupMaxCount;
 
         menuPingIPs.Checked = HostsEntry.AutoPingIPAddress;
         menuRemoveDefaultText.Checked = HostsFile.RemoveDefaultText;
@@ -1224,6 +1353,8 @@ internal partial class MainForm : Form
 
         settings.AutoPingIPAddresses = HostsEntry.AutoPingIPAddress;
         settings.RemoveDefaultText = HostsFile.RemoveDefaultText;
+        settings.AutoBackupEnabled = AutoBackupService.Enabled;
+        settings.AutoBackupMaxCount = AutoBackupService.MaxCount;
         settings.WindowLocation = Location;
         settings.ArchiveVisible = menuViewArchive.Checked;
 
