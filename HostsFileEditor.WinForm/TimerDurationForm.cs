@@ -10,6 +10,7 @@ internal class TimerDurationForm : Form
     public TimerDurationForm()
     {
         Text = "Activate with Rollback Timer";
+        Icon = Properties.Resources.HostsFileEditor;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

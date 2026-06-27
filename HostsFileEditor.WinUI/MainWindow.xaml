@@ -97,11 +97,6 @@
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
                         <MenuFlyoutSeparator/>
-                        <ToggleMenuFlyoutItem Text="Disable Hosts" IsChecked="{x:Bind IsDisabledHosts, Mode=OneWay}" Click="OnDisableHostsClick">
-                            <ToggleMenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE8F8;"/>
-                            </ToggleMenuFlyoutItem.Icon>
-                        </ToggleMenuFlyoutItem>
                         <ToggleMenuFlyoutItem Text="Ping IPs" IsChecked="{x:Bind IsPingIPs, Mode=OneWay}" Click="OnPingIPsClick">
                             <ToggleMenuFlyoutItem.Icon>
                                 <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE774;"/>
@@ -312,7 +307,7 @@
                 <Grid Grid.Row="1">
                     <ListView x:Name="ArchiveList" Margin="0,8,0,0" Background="Transparent" ItemsSource="{x:Bind Archives, Mode=OneWay}" SelectionChanged="OnArchiveSelectionChanged">
                         <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="local:HostsArchive">
+                            <DataTemplate x:DataType="local:HostsProfile">
                                 <TextBlock Text="{x:Bind FileName}"/>
                             </DataTemplate>
                         </ListView.ItemTemplate>

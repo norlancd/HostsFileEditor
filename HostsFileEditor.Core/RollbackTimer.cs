@@ -13,7 +13,7 @@ public enum RollbackTimerStatus
 public class RollbackTimer
 {
     public string ActivatedProfileName { get; set; } = string.Empty;
-    public string SnapshotArchiveName { get; set; } = string.Empty;
+    public string SnapshotFileName { get; set; } = string.Empty;
     public DateTime ActivatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public RollbackTimerStatus Status { get; set; } = RollbackTimerStatus.Active;

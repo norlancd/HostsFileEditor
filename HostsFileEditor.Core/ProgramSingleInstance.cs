@@ -56,7 +56,7 @@ public sealed class ProgramSingleInstance : IDisposable
     {
         // HACK: the second process won't return from SendMessage
         // so kill process after a few seconds
-        Task.Factory.StartNew(async () =>
+        Task.Run(async () =>
         {
             await Task.Delay(5000);
             Process.GetCurrentProcess().Kill();

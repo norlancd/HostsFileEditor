@@ -16,14 +16,14 @@ public class HostsFileAdditionalTests
         _tempFile = Path.Combine(_tempDir, "hosts");
         File.WriteAllLines(_tempFile, new[]{"127.0.0.1 localhost"});
         HostsFile.TestBackupHostFilePathOverride = Path.Combine(_tempDir, "hosts.bak");
-        HostsArchiveList.TestArchiveDirectoryOverride = _tempDir; // ensure archives stored in temp
+        HostsProfileList.TestProfileDirectoryOverride = _tempDir; // ensure profiles stored in temp
     }
 
     [TestCleanup]
     public void Cleanup()
     {
         HostsFile.TestBackupHostFilePathOverride = null;
-        HostsArchiveList.TestArchiveDirectoryOverride = null;
+        HostsProfileList.TestProfileDirectoryOverride = null;
         if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
     }
 
@@ -60,12 +60,15 @@ public class HostsFileAdditionalTests
     }
 
     [TestMethod]
-    public void Archive_CreatesArchiveEntry()
+    public void SaveAsProfile_CreatesProfileEntry()
     {
         var hf = Create();
-        var archiveName = Guid.NewGuid().ToString()+".txt";
-        hf.Archive(archiveName);
-        File.Exists(Path.Combine(_tempDir, archiveName)).ShouldBeTrue();
-        HostsArchiveList.Instance.Any(a => a.FilePath.EndsWith(archiveName)).ShouldBeTrue();
+        var profileName = Guid.NewGuid().ToString()+".txt";
+        hf.SaveAsProfile(profileName);
+
+        // SaveAsProfile() normalizes new profile names to end with the .hosts extension
+        var expectedFileName = HostsProfile.NormalizeName(profileName);
+        File.Exists(Path.Combine(_tempDir, expectedFileName)).ShouldBeTrue();
+        HostsProfileList.Instance.Any(a => a.FilePath.EndsWith(expectedFileName)).ShouldBeTrue();
     }
 }

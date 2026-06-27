@@ -22,7 +22,7 @@ using System.Resources;
 
 [assembly: AssemblyDescription(
     "Hosts File Editor makes it easy to change your hosts file as well as " +
-    "archive multiple versions for easy retrieval. It also includes " +
+    "save multiple profiles for easy retrieval. It also includes " +
     "features to ping IP addresses and enable/disable your hosts file " +
     "altogether.")]
 [assembly: AssemblyCopyright("Copyright © Scott Lerch 2025")]

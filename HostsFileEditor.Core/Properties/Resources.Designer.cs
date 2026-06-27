@@ -42,9 +42,9 @@ namespace HostsFileEditor.Properties {
             }
         }
         
-        internal static string ArchiveExists {
+        internal static string ProfileExists {
             get {
-                return ResourceManager.GetString("ArchiveExists", resourceCulture);
+                return ResourceManager.GetString("ProfileExists", resourceCulture);
             }
         }
         
@@ -60,9 +60,9 @@ namespace HostsFileEditor.Properties {
             }
         }
         
-        internal static string InputArchivePrompt {
+        internal static string InputProfilePrompt {
             get {
-                return ResourceManager.GetString("InputArchivePrompt", resourceCulture);
+                return ResourceManager.GetString("InputProfilePrompt", resourceCulture);
             }
         }
         

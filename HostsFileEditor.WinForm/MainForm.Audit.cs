@@ -2,8 +2,6 @@ namespace HostsFileEditor;
 
 internal partial class MainForm
 {
-    private string _currentProfileName = "current";
-
     // Per-entry last-known state. Updated whenever the entry fires PropertyChanged.
     private readonly Dictionary<HostsEntry, AuditEntrySnapshot> _entrySnapshots = [];
 
@@ -66,7 +64,7 @@ internal partial class MainForm
                 break;
 
             case System.ComponentModel.ListChangedType.Reset:
-                // Bulk replace (e.g. archive load) — re-baseline all
+                // Bulk replace (e.g. profile load) — re-baseline all
                 var stale = _entrySnapshots.Keys
                     .Except(HostsFile.Instance.Entries)
                     .ToList();
@@ -107,12 +105,7 @@ internal partial class MainForm
     {
         foreach (var (before, after) in _pendingModifications)
         {
-            AuditLogger.Instance.Log(new AuditEntry
-            {
-                Action = nameof(AuditActionType.EntryModified),
-                Source = source,
-                Detail = new AuditDetail { Before = before, After = after }
-            });
+            AuditLogger.Instance.Log(AuditActionType.EntryModified, source, new AuditDetail { Before = before, After = after });
         }
         _pendingModifications.Clear();
     }

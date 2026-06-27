@@ -139,11 +139,11 @@
   <data name="ProfileHotkeyConflict" xml:space="preserve">
     <value>Hotkey {0} for profile '{1}' could not be registered — already in use by another application.</value>
   </data>
-  <data name="ArchiveExists" xml:space="preserve">
-    <value>Archive name already exists!</value>
+  <data name="ProfileExists" xml:space="preserve">
+    <value>Profile name already exists!</value>
   </data>
-  <data name="InputArchivePrompt" xml:space="preserve">
-    <value>Input archive name:</value>
+  <data name="InputProfilePrompt" xml:space="preserve">
+    <value>Input profile name:</value>
   </data>
   <data name="InvalidIPAddress" xml:space="preserve">
     <value>Invalid IP Address</value>
@@ -166,17 +166,8 @@
   <data name="FilterComments" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\comment-delete.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="ViewArchive" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\database.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="Archive" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\database-add.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
   <data name="Import" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\document-save-2.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
-  </data>
-  <data name="Disable" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\edit-delete-4.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="Delete" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\edit-delete-6.png;System.Drawing.Bitmap, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
@@ -213,22 +204,6 @@
         OnH+VxISdnaBwpj+CzR2WZm5a+aOOanADWrFWnYBYUgwAX84AYHMyMwjtmu0kJvgN/ejhl/HLtCt3ENE
         UqiXmSGSlHYfiqYg7NRA0EbCuxdjFxyc05Co1tDQoYZn54Q9XB14vG+qqt/jAaFM0AAAAABJRU5ErkJg
         gg==
-</value>
-  </data>
-  <data name="LoadArchive" type="System.Drawing.Bitmap, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
-    <value>
-        iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAALGPC/xhBQAAAAlwSFlzAAAO
-        wwAADsMBx2+oZAAAAkdJREFUOE/FkF1I02EUxv8XXXRlkRWFUGB54c0gKKK6CCmiUBTLLEjShJofVBgL
-        c360qenm5ubUlS5rm66p00ozCvuQCkUi1NSRZmpWFJViZqjk16+/LtShhHcdeHjhcJ7fec4rLLeUBjuX
-        1FYyjQ7+tpZfETKjmylVhM284bJ8hE99b6m06Repo+XpPzeFxGYTFJ2DMDPc1WZhbKhiVr8H7Uz0m3FY
-        s+lofbYk5EiMjqAoAwHSPISKYh2jg6Vu5qmvBUw44yi9qaakMANzfiqmnBSuaeXkqeLdoWUWDaPfLXPm
-        adFMlxyc0iW1CHCrSMWvL6Y5c22lZlYPHVnU2FXcLcnAYU7DblJiNV7mhiGJQp0coybBBSsxZTD8IXc2
-        dm+9gqpSHVO9SuhLd9d7sdeTCJ0yeBNLa3kotut6BLMxjZ/daviopbosm8ZHWtfQwuivw6EphMkGf8Ye
-        +/GuWIJMGuw6pcig4EeHkr6GZKrsWqZ7FNAe5TK2RorG40w2BjJWd4DhB3sYqNyGMtpHPEfuAhTokhlo
-        S+C2TUPzCzFJZ5wIOA3NYUy/DGb8+SFGavcyWLWdb2W+NF1ZzQl/7/mPNGbJaa9L4Y4tC7pToEWM++oo
-        4/UBjDzxY6hmJ/0OCZ8tW3FqPVFIt3A2+uQ8IDczngqrGue9GJr0wpwatSuoU63kfuoqypPWYY734uqF
-        zYQt3D5T+vSL6BVnyEyIIPHcMc5HBnIqdD+HD+5i324JOyQ++Hp7sWnjWtav8WCDp4c74D+XIPwBF8be
-        aT1+/VgAAAAASUVORK5CYII=
 </value>
   </data>
   <data name="Paste" type="System.Drawing.Bitmap, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">

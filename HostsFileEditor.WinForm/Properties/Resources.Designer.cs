@@ -60,22 +60,13 @@ namespace HostsFileEditor.Properties {
             }
         }
         
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap Archive {
-            get {
-                object obj = ResourceManager.GetObject("Archive", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
         
         /// <summary>
-        ///   Looks up a localized string similar to Archive name already exists!.
+        ///   Looks up a localized string similar to Profile name already exists!.
         /// </summary>
-        internal static string ArchiveExists {
+        internal static string ProfileExists {
             get {
-                return ResourceManager.GetString("ArchiveExists", resourceCulture);
+                return ResourceManager.GetString("ProfileExists", resourceCulture);
             }
         }
 
@@ -137,16 +128,6 @@ namespace HostsFileEditor.Properties {
         internal static System.Drawing.Bitmap Delete {
             get {
                 object obj = ResourceManager.GetObject("Delete", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap Disable {
-            get {
-                object obj = ResourceManager.GetObject("Disable", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
@@ -229,7 +210,7 @@ namespace HostsFileEditor.Properties {
                 return ((System.Drawing.Icon)(obj));
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
         /// </summary>
@@ -239,7 +220,7 @@ namespace HostsFileEditor.Properties {
                 return ((System.Drawing.Icon)(obj));
             }
         }
-        
+
         /// <summary>
         ///   Looks up a localized resource of type System.Drawing.Bitmap.
         /// </summary>
@@ -251,11 +232,11 @@ namespace HostsFileEditor.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Input archive name:.
+        ///   Looks up a localized string similar to Input profile name:.
         /// </summary>
-        internal static string InputArchivePrompt {
+        internal static string InputProfilePrompt {
             get {
-                return ResourceManager.GetString("InputArchivePrompt", resourceCulture);
+                return ResourceManager.GetString("InputProfilePrompt", resourceCulture);
             }
         }
         
@@ -303,16 +284,6 @@ namespace HostsFileEditor.Properties {
         internal static string InvalidIPAddress {
             get {
                 return ResourceManager.GetString("InvalidIPAddress", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap LoadArchive {
-            get {
-                object obj = ResourceManager.GetObject("LoadArchive", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
             }
         }
         
@@ -449,16 +420,6 @@ namespace HostsFileEditor.Properties {
         internal static string UnknownException {
             get {
                 return ResourceManager.GetString("UnknownException", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap ViewArchive {
-            get {
-                object obj = ResourceManager.GetObject("ViewArchive", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
             }
         }
     }

@@ -52,17 +52,17 @@ public class RollbackTimerService
         {
             var now = DateTime.UtcNow;
             var snapshotName = $"__rollback_{now:yyyyMMdd_HHmmss}";
-            snapshotPath = Path.Combine(HostsArchiveList.EffectiveArchiveDirectory, snapshotName);
+            snapshotPath = Path.Combine(HostsProfileList.EffectiveProfileDirectory, snapshotName);
 
             // Snapshot current state before switching
-            Directory.CreateDirectory(HostsArchiveList.EffectiveArchiveDirectory);
+            Directory.CreateDirectory(HostsProfileList.EffectiveProfileDirectory);
             File.Copy(HostsFile.DefaultHostFilePath, snapshotPath, overwrite: true);
             var hash = "sha256:" + ComputeHash(File.ReadAllBytes(snapshotPath));
 
             ActiveTimer = new RollbackTimer
             {
                 ActivatedProfileName = profileName,
-                SnapshotArchiveName = snapshotName,
+                SnapshotFileName = snapshotName,
                 ActivatedAt = now,
                 ExpiresAt = now + duration,
                 Status = RollbackTimerStatus.Active,
@@ -90,15 +90,10 @@ public class RollbackTimerService
         lock (_lock)
         {
             // Audit log
-            AuditLogger.Instance.Log(new AuditEntry
+            AuditLogger.Instance.Log(AuditActionType.TimedProfileSwitch, AuditSource.MainForm, new AuditDetail
             {
-                Action = nameof(AuditActionType.TimedProfileSwitch),
-                Source = AuditSource.MainForm,
-                Detail = new AuditDetail
-                {
-                    ProfileTo = profileName,
-                    RollbackTimerMinutes = (int)Math.Round(ActiveTimer!.ExpiresAt.Subtract(ActiveTimer.ActivatedAt).TotalMinutes)
-                }
+                ProfileTo = profileName,
+                RollbackTimerMinutes = (int)Math.Round(ActiveTimer!.ExpiresAt.Subtract(ActiveTimer.ActivatedAt).TotalMinutes)
             });
 
             StartCountdown(ActiveTimer!.ExpiresAt - DateTime.UtcNow);
@@ -122,18 +117,14 @@ public class RollbackTimerService
 
             snapshot = ActiveTimer;
             profileFrom = snapshot.ActivatedProfileName;
-            snapshotPath = Path.Combine(HostsArchiveList.EffectiveArchiveDirectory, snapshot.SnapshotArchiveName);
+            snapshotPath = Path.Combine(HostsProfileList.EffectiveProfileDirectory, snapshot.SnapshotFileName);
 
             // Verify snapshot exists
             if (!File.Exists(snapshotPath))
             {
                 Notification?.Invoke(this, $"Rollback snapshot is missing. Auto-revert for '{profileFrom}' cancelled.");
-                AuditLogger.Instance.Log(new AuditEntry
-                {
-                    Action = nameof(AuditActionType.RollbackExecuted),
-                    Source = AuditSource.RollbackTimer,
-                    Detail = new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom }
-                });
+                AuditLogger.Instance.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
+                    new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom });
                 CleanupState(RollbackTimerStatus.Cancelled);
                 return;
             }
@@ -157,12 +148,8 @@ public class RollbackTimerService
 
         try { File.Delete(snapshotPath!); } catch (IOException) { }
 
-        AuditLogger.Instance.Log(new AuditEntry
-        {
-            Action = nameof(AuditActionType.RollbackExecuted),
-            Source = AuditSource.RollbackTimer,
-            Detail = new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom }
-        });
+        AuditLogger.Instance.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
+            new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom });
 
         Notification?.Invoke(this, $"Hosts file reverted to configuration before '{profileFrom}' was activated.");
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -198,19 +185,15 @@ public class RollbackTimerService
             if (ActiveTimer == null) return;
 
             profileName = ActiveTimer.ActivatedProfileName;
-            snapshotPath = Path.Combine(HostsArchiveList.EffectiveArchiveDirectory, ActiveTimer.SnapshotArchiveName);
+            snapshotPath = Path.Combine(HostsProfileList.EffectiveProfileDirectory, ActiveTimer.SnapshotFileName);
 
             CleanupState(RollbackTimerStatus.Cancelled);
         }
 
         try { File.Delete(snapshotPath!); } catch (IOException) { }
 
-        AuditLogger.Instance.Log(new AuditEntry
-        {
-            Action = nameof(AuditActionType.TimerCancelled),
-            Source = AuditSource.MainForm,
-            Detail = new AuditDetail { ProfileKept = profileName }
-        });
+        AuditLogger.Instance.Log(AuditActionType.TimerCancelled, AuditSource.MainForm,
+            new AuditDetail { ProfileKept = profileName });
 
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

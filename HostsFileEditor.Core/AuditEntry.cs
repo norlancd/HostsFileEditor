@@ -8,7 +8,6 @@ public enum AuditActionType
     EntryAdded,
     EntryRemoved,
     EntryModified,
-    HostsFileEnabled,
     HostsFileDisabled,
     TimedProfileSwitch,
     RollbackExecuted,

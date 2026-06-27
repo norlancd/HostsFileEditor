@@ -19,6 +19,7 @@ internal class AuditLogForm : Form
     public AuditLogForm()
     {
         Text = "Audit Log";
+        Icon = Properties.Resources.HostsFileEditor;
         Size = new Size(900, 600);
         MinimumSize = new Size(700, 450);
         StartPosition = FormStartPosition.CenterParent;

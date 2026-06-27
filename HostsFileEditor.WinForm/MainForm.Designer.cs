@@ -37,10 +37,7 @@ partial class MainForm
         System.Windows.Forms.ToolStripSeparator toolStripSeparator22;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator23;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator25;
-        System.Windows.Forms.ToolStripLabel toolStripLabel1;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator27;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator18;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator14;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator13;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator12;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator28;
@@ -48,16 +45,19 @@ partial class MainForm
         System.Windows.Forms.ToolStripSeparator toolStripSeparator5;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator6;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator24;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator9;
         System.Windows.Forms.ToolStripMenuItem menuFilter;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator15;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator26;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator16;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator17;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator19;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator21;
-        System.Windows.Forms.ToolStripSeparator toolStripSeparator20;
         System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorAuditLog;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorEdit1;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorEdit2;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorEdit3;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorEdit4;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorDiff;
+        System.Windows.Forms.ToolStripSeparator toolStripSeparatorTrayProfiles;
         this.toolStripContainer = new System.Windows.Forms.ToolStripContainer();
         this.statusStrip = new System.Windows.Forms.StatusStrip();
         this.labelLineCount = new System.Windows.Forms.ToolStripStatusLabel();
@@ -65,7 +65,6 @@ partial class MainForm
         this.bindingSourceHostFile = new System.Windows.Forms.BindingSource(this.components);
         this.labelHostEntries = new System.Windows.Forms.ToolStripStatusLabel();
         this.labelHostEntriesCount = new HostsFileEditor.Controls.ToolStripBindableStatusLabel();
-        this.splitContainer = new System.Windows.Forms.SplitContainer();
         this.dataGridViewHostsEntries = new HostsFileEditor.Controls.HostsEntryDataGridView();
         this.columnValid = new System.Windows.Forms.DataGridViewCheckBoxColumn();
         this.columnEnabled = new System.Windows.Forms.DataGridViewCheckBoxColumn();
@@ -90,20 +89,12 @@ partial class MainForm
         this.contextMenuCheck = new System.Windows.Forms.ToolStripMenuItem();
         this.contextMenuUncheck = new System.Windows.Forms.ToolStripMenuItem();
         this.bindingSourceView = new System.Windows.Forms.BindingSource(this.components);
-        this.dataGridViewArchive = new HostsFileEditor.Controls.HostsArchiveDataGridView();
-        this.fileNameDataGridViewTextBoxColumn = new System.Windows.Forms.DataGridViewTextBoxColumn();
-        this.bindingSourceArchive = new System.Windows.Forms.BindingSource(this.components);
-        this.toolStripArchive = new HostsFileEditor.Controls.ToolStripEx();
-        this.buttonDeleteArchive = new System.Windows.Forms.ToolStripButton();
-        this.buttonLoadArchive = new System.Windows.Forms.ToolStripButton();
         this.menuStrip = new HostsFileEditor.Controls.MenuStripEx();
         this.menuFile = new System.Windows.Forms.ToolStripMenuItem();
         this.menuSave = new System.Windows.Forms.ToolStripMenuItem();
         this.menuSaveAs = new System.Windows.Forms.ToolStripMenuItem();
-        this.menuArchive = new System.Windows.Forms.ToolStripMenuItem();
         this.openTextEditor = new System.Windows.Forms.ToolStripMenuItem();
-        this.menuRestoreDefaults = new System.Windows.Forms.ToolStripMenuItem();
-        this.menuDisable = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuRawEdit = new System.Windows.Forms.ToolStripMenuItem();
         this.menuImport = new System.Windows.Forms.ToolStripMenuItem();
         this.menuExit = new System.Windows.Forms.ToolStripMenuItem();
         this.editToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -123,20 +114,25 @@ partial class MainForm
         this.menuCheck = new System.Windows.Forms.ToolStripMenuItem();
         this.menuUncheck = new System.Windows.Forms.ToolStripMenuItem();
         this.viewToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
-        this.menuViewArchive = new System.Windows.Forms.ToolStripMenuItem();
         this.menuFilterComments = new System.Windows.Forms.ToolStripMenuItem();
         this.menuFilterDisabled = new System.Windows.Forms.ToolStripMenuItem();
         this.toolStripSeparator29 = new System.Windows.Forms.ToolStripSeparator();
         this.menuRemoveSort = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuViewAuditLog = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuBarProfiles = new System.Windows.Forms.ToolStripMenuItem();
         this.menuTools = new System.Windows.Forms.ToolStripMenuItem();
         this.menuPingIPs = new System.Windows.Forms.ToolStripMenuItem();
         this.menuRemoveDefaultText = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuDiffBeforeSwitch = new System.Windows.Forms.ToolStripMenuItem();
         this.toolStrip = new HostsFileEditor.Controls.ToolStripEx();
         this.buttonSave = new System.Windows.Forms.ToolStripButton();
         this.buttonRefresh = new System.Windows.Forms.ToolStripButton();
-        this.buttonDisable = new System.Windows.Forms.ToolStripButton();
-        this.buttonArchive = new System.Windows.Forms.ToolStripButton();
-        this.buttonViewArchive = new System.Windows.Forms.ToolStripButton();
+        this.buttonDuplicate = new System.Windows.Forms.ToolStripButton();
+        this.buttonInsertAbove = new System.Windows.Forms.ToolStripButton();
+        this.buttonInsertBelow = new System.Windows.Forms.ToolStripButton();
+        this.buttonMoveUp = new System.Windows.Forms.ToolStripButton();
+        this.buttonMoveDown = new System.Windows.Forms.ToolStripButton();
+        this.buttonDelete = new System.Windows.Forms.ToolStripButton();
         this.toolStripDropDownButton1 = new System.Windows.Forms.ToolStripLabel();
         this.buttonFilterComment = new System.Windows.Forms.ToolStripButton();
         this.buttonFilterDisabled = new System.Windows.Forms.ToolStripButton();
@@ -155,7 +151,7 @@ partial class MainForm
         this.notifyIcon = new System.Windows.Forms.NotifyIcon(this.components);
         this.contextMenuTray = new System.Windows.Forms.ContextMenuStrip(this.components);
         this.menuContextEdit = new System.Windows.Forms.ToolStripMenuItem();
-        this.menuContextDisable = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuTrayProfiles = new System.Windows.Forms.ToolStripMenuItem();
         this.contextMenuExit = new System.Windows.Forms.ToolStripMenuItem();
         this.openFileDialog = new System.Windows.Forms.OpenFileDialog();
         this.bindingSourceHostEntries = new System.Windows.Forms.BindingSource(this.components);
@@ -164,10 +160,7 @@ partial class MainForm
         toolStripSeparator22 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator23 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator25 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
-        toolStripSeparator27 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator18 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripSeparator14 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator13 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator12 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator28 = new System.Windows.Forms.ToolStripSeparator();
@@ -175,32 +168,28 @@ partial class MainForm
         toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator6 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator24 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripSeparator9 = new System.Windows.Forms.ToolStripSeparator();
         menuFilter = new System.Windows.Forms.ToolStripMenuItem();
         toolStripSeparator15 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripSeparator26 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripSeparator16 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator17 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator19 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator21 = new System.Windows.Forms.ToolStripSeparator();
-        toolStripSeparator20 = new System.Windows.Forms.ToolStripSeparator();
         toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorAuditLog = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorEdit1 = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorEdit2 = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorEdit3 = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorEdit4 = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorDiff = new System.Windows.Forms.ToolStripSeparator();
+        toolStripSeparatorTrayProfiles = new System.Windows.Forms.ToolStripSeparator();
         this.toolStripContainer.BottomToolStripPanel.SuspendLayout();
         this.toolStripContainer.ContentPanel.SuspendLayout();
         this.toolStripContainer.TopToolStripPanel.SuspendLayout();
         this.toolStripContainer.SuspendLayout();
         this.statusStrip.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)(this.bindingSourceHostFile)).BeginInit();
-        ((System.ComponentModel.ISupportInitialize)(this.splitContainer)).BeginInit();
-        this.splitContainer.Panel1.SuspendLayout();
-        this.splitContainer.Panel2.SuspendLayout();
-        this.splitContainer.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)(this.dataGridViewHostsEntries)).BeginInit();
         this.contextMenuGrid.SuspendLayout();
         ((System.ComponentModel.ISupportInitialize)(this.bindingSourceView)).BeginInit();
-        ((System.ComponentModel.ISupportInitialize)(this.dataGridViewArchive)).BeginInit();
-        ((System.ComponentModel.ISupportInitialize)(this.bindingSourceArchive)).BeginInit();
-        this.toolStripArchive.SuspendLayout();
         this.menuStrip.SuspendLayout();
         this.toolStrip.SuspendLayout();
         this.contextMenuTray.SuspendLayout();
@@ -216,7 +205,7 @@ partial class MainForm
         // 
         // toolStripContainer.ContentPanel
         // 
-        this.toolStripContainer.ContentPanel.Controls.Add(this.splitContainer);
+        this.toolStripContainer.ContentPanel.Controls.Add(this.dataGridViewHostsEntries);
         resources.ApplyResources(this.toolStripContainer.ContentPanel, "toolStripContainer.ContentPanel");
         resources.ApplyResources(this.toolStripContainer, "toolStripContainer");
         this.toolStripContainer.Name = "toolStripContainer";
@@ -261,24 +250,9 @@ partial class MainForm
         this.labelHostEntriesCount.DataBindings.Add(new System.Windows.Forms.Binding("Text", this.bindingSourceHostFile, "EnabledCount", true));
         this.labelHostEntriesCount.Name = "labelHostEntriesCount";
         resources.ApplyResources(this.labelHostEntriesCount, "labelHostEntriesCount");
-        // 
-        // splitContainer
-        // 
-        resources.ApplyResources(this.splitContainer, "splitContainer");
-        this.splitContainer.FixedPanel = System.Windows.Forms.FixedPanel.Panel2;
-        this.splitContainer.Name = "splitContainer";
-        // 
-        // splitContainer.Panel1
-        // 
-        this.splitContainer.Panel1.Controls.Add(this.dataGridViewHostsEntries);
-        // 
-        // splitContainer.Panel2
-        // 
-        this.splitContainer.Panel2.Controls.Add(this.dataGridViewArchive);
-        this.splitContainer.Panel2.Controls.Add(this.toolStripArchive);
-        // 
+        //
         // dataGridViewHostsEntries
-        // 
+        //
         this.dataGridViewHostsEntries.AllowDrop = true;
         this.dataGridViewHostsEntries.AllowUserToOrderColumns = true;
         this.dataGridViewHostsEntries.AllowUserToResizeRows = false;
@@ -474,82 +448,7 @@ partial class MainForm
         // bindingSourceView
         // 
         this.bindingSourceView.DataSource = typeof(HostsFileEditor.HostsEntryList);
-        // 
-        // dataGridViewArchive
-        // 
-        this.dataGridViewArchive.AllowUserToAddRows = false;
-        this.dataGridViewArchive.AllowUserToDeleteRows = false;
-        this.dataGridViewArchive.AllowUserToResizeColumns = false;
-        this.dataGridViewArchive.AllowUserToResizeRows = false;
-        this.dataGridViewArchive.AutoGenerateColumns = false;
-        this.dataGridViewArchive.BackgroundColor = System.Drawing.Color.White;
-        this.dataGridViewArchive.BorderStyle = System.Windows.Forms.BorderStyle.None;
-        this.dataGridViewArchive.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
-        this.dataGridViewArchive.ColumnHeadersVisible = false;
-        this.dataGridViewArchive.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] {
-        this.fileNameDataGridViewTextBoxColumn});
-        this.dataGridViewArchive.DataSource = this.bindingSourceArchive;
-        resources.ApplyResources(this.dataGridViewArchive, "dataGridViewArchive");
-        this.dataGridViewArchive.GridColor = System.Drawing.Color.White;
-        this.dataGridViewArchive.MultiSelect = false;
-        this.dataGridViewArchive.Name = "dataGridViewArchive";
-        this.dataGridViewArchive.ReadOnly = true;
-        this.dataGridViewArchive.RowHeadersVisible = false;
-        this.dataGridViewArchive.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-        // 
-        // fileNameDataGridViewTextBoxColumn
-        // 
-        this.fileNameDataGridViewTextBoxColumn.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-        this.fileNameDataGridViewTextBoxColumn.DataPropertyName = "FileName";
-        resources.ApplyResources(this.fileNameDataGridViewTextBoxColumn, "fileNameDataGridViewTextBoxColumn");
-        this.fileNameDataGridViewTextBoxColumn.Name = "fileNameDataGridViewTextBoxColumn";
-        this.fileNameDataGridViewTextBoxColumn.ReadOnly = true;
-        // 
-        // bindingSourceArchive
-        // 
-        this.bindingSourceArchive.AllowNew = false;
-        this.bindingSourceArchive.DataSource = typeof(HostsFileEditor.HostsArchiveList);
-        // 
-        // toolStripArchive
-        // 
-        this.toolStripArchive.ClickThrough = true;
-        this.toolStripArchive.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
-        this.toolStripArchive.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-        toolStripLabel1,
-        toolStripSeparator27,
-        this.buttonDeleteArchive,
-        this.buttonLoadArchive});
-        resources.ApplyResources(this.toolStripArchive, "toolStripArchive");
-        this.toolStripArchive.Name = "toolStripArchive";
-        // 
-        // toolStripLabel1
-        // 
-        toolStripLabel1.Name = "toolStripLabel1";
-        resources.ApplyResources(toolStripLabel1, "toolStripLabel1");
-        // 
-        // toolStripSeparator27
-        // 
-        toolStripSeparator27.Name = "toolStripSeparator27";
-        resources.ApplyResources(toolStripSeparator27, "toolStripSeparator27");
-        // 
-        // buttonDeleteArchive
-        // 
-        this.buttonDeleteArchive.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
-        this.buttonDeleteArchive.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-        this.buttonDeleteArchive.Image = global::HostsFileEditor.Properties.Resources.Delete;
-        resources.ApplyResources(this.buttonDeleteArchive, "buttonDeleteArchive");
-        this.buttonDeleteArchive.Name = "buttonDeleteArchive";
-        this.buttonDeleteArchive.Click += new System.EventHandler(this.OnArchiveDeleteClick);
-        // 
-        // buttonLoadArchive
-        // 
-        this.buttonLoadArchive.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
-        this.buttonLoadArchive.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-        this.buttonLoadArchive.Image = global::HostsFileEditor.Properties.Resources.LoadArchive;
-        resources.ApplyResources(this.buttonLoadArchive, "buttonLoadArchive");
-        this.buttonLoadArchive.Name = "buttonLoadArchive";
-        this.buttonLoadArchive.Click += new System.EventHandler(this.OnArchiveLoadClick);
-        // 
+        //
         // menuStrip
         // 
         this.menuStrip.ClickThrough = true;
@@ -558,9 +457,15 @@ partial class MainForm
         this.menuFile,
         this.editToolStripMenuItem,
         this.viewToolStripMenuItem,
+        this.menuBarProfiles,
         this.menuTools,
         this.helpToolStripMenuItem});
         this.menuStrip.Name = "menuStrip";
+        //
+        // menuBarProfiles
+        //
+        this.menuBarProfiles.Name = "menuBarProfiles";
+        this.menuBarProfiles.Text = "Profiles";
         // 
         // menuFile
         // 
@@ -568,11 +473,8 @@ partial class MainForm
         this.menuSave,
         this.menuSaveAs,
         toolStripSeparator18,
-        this.menuArchive,
-        toolStripSeparator14,
         this.openTextEditor,
-        this.menuRestoreDefaults,
-        this.menuDisable,
+        this.menuRawEdit,
         toolStripSeparator13,
         this.menuImport,
         toolStripSeparator12,
@@ -597,38 +499,19 @@ partial class MainForm
         // 
         toolStripSeparator18.Name = "toolStripSeparator18";
         resources.ApplyResources(toolStripSeparator18, "toolStripSeparator18");
-        // 
-        // menuArchive
-        // 
-        this.menuArchive.Image = global::HostsFileEditor.Properties.Resources.Archive;
-        this.menuArchive.Name = "menuArchive";
-        resources.ApplyResources(this.menuArchive, "menuArchive");
-        this.menuArchive.Click += new System.EventHandler(this.OnArchiveClick);
-        // 
-        // toolStripSeparator14
-        // 
-        toolStripSeparator14.Name = "toolStripSeparator14";
-        resources.ApplyResources(toolStripSeparator14, "toolStripSeparator14");
-        // 
+        //
         // openTextEditor
-        // 
+        //
         this.openTextEditor.Name = "openTextEditor";
         resources.ApplyResources(this.openTextEditor, "openTextEditor");
         this.openTextEditor.Click += new System.EventHandler(this.OnOpenTextEditorClick);
-        // 
-        // menuRestoreDefaults
-        // 
-        this.menuRestoreDefaults.Name = "menuRestoreDefaults";
-        resources.ApplyResources(this.menuRestoreDefaults, "menuRestoreDefaults");
-        this.menuRestoreDefaults.Click += new System.EventHandler(this.OnRestoreClick);
-        // 
-        // menuDisable
-        // 
-        this.menuDisable.Image = global::HostsFileEditor.Properties.Resources.Disable;
-        this.menuDisable.Name = "menuDisable";
-        resources.ApplyResources(this.menuDisable, "menuDisable");
-        this.menuDisable.Click += new System.EventHandler(this.OnDisableHostsClick);
-        // 
+        //
+        // menuRawEdit
+        //
+        this.menuRawEdit.Name = "menuRawEdit";
+        this.menuRawEdit.Text = "Raw Edit…";
+        this.menuRawEdit.Click += new System.EventHandler(this.OnRawEditClick);
+        //
         // toolStripSeparator13
         // 
         toolStripSeparator13.Name = "toolStripSeparator13";
@@ -642,16 +525,16 @@ partial class MainForm
         this.menuImport.Click += new System.EventHandler(this.OnImportClick);
         // 
         // toolStripSeparator12
-        // 
+        //
         toolStripSeparator12.Name = "toolStripSeparator12";
         resources.ApplyResources(toolStripSeparator12, "toolStripSeparator12");
-        // 
+        //
         // menuExit
-        // 
+        //
         this.menuExit.Name = "menuExit";
         resources.ApplyResources(this.menuExit, "menuExit");
         this.menuExit.Click += new System.EventHandler(this.OnExitClick);
-        // 
+        //
         // editToolStripMenuItem
         // 
         this.editToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -810,26 +693,24 @@ partial class MainForm
         // viewToolStripMenuItem
         // 
         this.viewToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-        this.menuViewArchive,
-        toolStripSeparator9,
         menuFilter,
         this.toolStripSeparator29,
-        this.menuRemoveSort});
+        this.menuRemoveSort,
+        toolStripSeparatorAuditLog,
+        this.menuViewAuditLog});
         this.viewToolStripMenuItem.Name = "viewToolStripMenuItem";
         resources.ApplyResources(this.viewToolStripMenuItem, "viewToolStripMenuItem");
-        // 
-        // menuViewArchive
-        // 
-        this.menuViewArchive.Image = global::HostsFileEditor.Properties.Resources.ViewArchive;
-        this.menuViewArchive.Name = "menuViewArchive";
-        resources.ApplyResources(this.menuViewArchive, "menuViewArchive");
-        this.menuViewArchive.Click += new System.EventHandler(this.OnViewArchiveClick);
-        // 
-        // toolStripSeparator9
-        // 
-        toolStripSeparator9.Name = "toolStripSeparator9";
-        resources.ApplyResources(toolStripSeparator9, "toolStripSeparator9");
-        // 
+        //
+        // toolStripSeparatorAuditLog
+        //
+        toolStripSeparatorAuditLog.Name = "toolStripSeparatorAuditLog";
+        //
+        // menuViewAuditLog
+        //
+        this.menuViewAuditLog.Name = "menuViewAuditLog";
+        this.menuViewAuditLog.Text = "Audit Log…";
+        this.menuViewAuditLog.Click += new System.EventHandler(this.OnViewAuditLogClick);
+        //
         // menuFilter
         // 
         menuFilter.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -868,10 +749,23 @@ partial class MainForm
         // 
         this.menuTools.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
         this.menuPingIPs,
-        this.menuRemoveDefaultText});
+        this.menuRemoveDefaultText,
+        toolStripSeparatorDiff,
+        this.menuDiffBeforeSwitch});
         this.menuTools.Name = "menuTools";
         resources.ApplyResources(this.menuTools, "menuTools");
-        // 
+        //
+        // toolStripSeparatorDiff
+        //
+        toolStripSeparatorDiff.Name = "toolStripSeparatorDiff";
+        //
+        // menuDiffBeforeSwitch
+        //
+        this.menuDiffBeforeSwitch.CheckOnClick = true;
+        this.menuDiffBeforeSwitch.Name = "menuDiffBeforeSwitch";
+        this.menuDiffBeforeSwitch.Text = "Show Diff Before Switching Profiles";
+        this.menuDiffBeforeSwitch.CheckedChanged += new System.EventHandler(this.OnDiffBeforeSwitchCheckedChanged);
+        //
         // menuPingIPs
         // 
         this.menuPingIPs.Name = "menuPingIPs";
@@ -895,12 +789,17 @@ partial class MainForm
         this.buttonSave,
         toolStripSeparator15,
         this.buttonRefresh,
-        toolStripSeparator26,
-        this.buttonDisable,
-        toolStripSeparator16,
-        this.buttonArchive,
-        this.buttonViewArchive,
         toolStripSeparator17,
+        this.buttonDuplicate,
+        toolStripSeparatorEdit1,
+        this.buttonInsertAbove,
+        this.buttonInsertBelow,
+        toolStripSeparatorEdit2,
+        this.buttonMoveUp,
+        this.buttonMoveDown,
+        toolStripSeparatorEdit3,
+        this.buttonDelete,
+        toolStripSeparatorEdit4,
         this.toolStripDropDownButton1,
         this.buttonFilterComment,
         this.buttonFilterDisabled,
@@ -929,45 +828,78 @@ partial class MainForm
         resources.ApplyResources(this.buttonRefresh, "buttonRefresh");
         this.buttonRefresh.Name = "buttonRefresh";
         this.buttonRefresh.Click += new System.EventHandler(this.OnRefreshClick);
-        // 
-        // toolStripSeparator26
-        // 
-        toolStripSeparator26.Name = "toolStripSeparator26";
-        resources.ApplyResources(toolStripSeparator26, "toolStripSeparator26");
-        // 
-        // buttonDisable
-        // 
-        this.buttonDisable.Image = global::HostsFileEditor.Properties.Resources.Disable;
-        resources.ApplyResources(this.buttonDisable, "buttonDisable");
-        this.buttonDisable.Name = "buttonDisable";
-        this.buttonDisable.Click += new System.EventHandler(this.OnDisableHostsClick);
-        // 
-        // toolStripSeparator16
-        // 
-        toolStripSeparator16.Name = "toolStripSeparator16";
-        resources.ApplyResources(toolStripSeparator16, "toolStripSeparator16");
-        // 
-        // buttonArchive
-        // 
-        this.buttonArchive.Image = global::HostsFileEditor.Properties.Resources.Archive;
-        resources.ApplyResources(this.buttonArchive, "buttonArchive");
-        this.buttonArchive.Name = "buttonArchive";
-        this.buttonArchive.Click += new System.EventHandler(this.OnArchiveClick);
-        // 
-        // buttonViewArchive
-        // 
-        this.buttonViewArchive.Image = global::HostsFileEditor.Properties.Resources.ViewArchive;
-        resources.ApplyResources(this.buttonViewArchive, "buttonViewArchive");
-        this.buttonViewArchive.Name = "buttonViewArchive";
-        this.buttonViewArchive.Click += new System.EventHandler(this.OnViewArchiveClick);
-        // 
+        //
         // toolStripSeparator17
-        // 
+        //
         toolStripSeparator17.Name = "toolStripSeparator17";
         resources.ApplyResources(toolStripSeparator17, "toolStripSeparator17");
-        // 
+        //
+        // buttonDuplicate
+        //
+        this.buttonDuplicate.Image = global::HostsFileEditor.Properties.Resources.Duplicate;
+        this.buttonDuplicate.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonDuplicate.Name = "buttonDuplicate";
+        this.buttonDuplicate.ToolTipText = "Duplicate";
+        this.buttonDuplicate.Click += new System.EventHandler(this.OnDuplicateClick);
+        //
+        // toolStripSeparatorEdit1
+        //
+        toolStripSeparatorEdit1.Name = "toolStripSeparatorEdit1";
+        //
+        // buttonInsertAbove
+        //
+        this.buttonInsertAbove.Image = global::HostsFileEditor.Properties.Resources.InsertAbove;
+        this.buttonInsertAbove.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonInsertAbove.Name = "buttonInsertAbove";
+        this.buttonInsertAbove.ToolTipText = "Insert Above";
+        this.buttonInsertAbove.Click += new System.EventHandler(this.OnInsertAboveClick);
+        //
+        // buttonInsertBelow
+        //
+        this.buttonInsertBelow.Image = global::HostsFileEditor.Properties.Resources.InsertBelow;
+        this.buttonInsertBelow.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonInsertBelow.Name = "buttonInsertBelow";
+        this.buttonInsertBelow.ToolTipText = "Insert Below";
+        this.buttonInsertBelow.Click += new System.EventHandler(this.OnInsertBelowClick);
+        //
+        // toolStripSeparatorEdit2
+        //
+        toolStripSeparatorEdit2.Name = "toolStripSeparatorEdit2";
+        //
+        // buttonMoveUp
+        //
+        this.buttonMoveUp.Image = global::HostsFileEditor.Properties.Resources.MoveUp;
+        this.buttonMoveUp.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonMoveUp.Name = "buttonMoveUp";
+        this.buttonMoveUp.ToolTipText = "Move Up";
+        this.buttonMoveUp.Click += new System.EventHandler(this.OnMoveUpClick);
+        //
+        // buttonMoveDown
+        //
+        this.buttonMoveDown.Image = global::HostsFileEditor.Properties.Resources.MoveDown;
+        this.buttonMoveDown.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonMoveDown.Name = "buttonMoveDown";
+        this.buttonMoveDown.ToolTipText = "Move Down";
+        this.buttonMoveDown.Click += new System.EventHandler(this.OnMoveDownClick);
+        //
+        // toolStripSeparatorEdit3
+        //
+        toolStripSeparatorEdit3.Name = "toolStripSeparatorEdit3";
+        //
+        // buttonDelete
+        //
+        this.buttonDelete.Image = global::HostsFileEditor.Properties.Resources.Delete;
+        this.buttonDelete.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+        this.buttonDelete.Name = "buttonDelete";
+        this.buttonDelete.ToolTipText = "Delete";
+        this.buttonDelete.Click += new System.EventHandler(this.OnDeleteClick);
+        //
+        // toolStripSeparatorEdit4
+        //
+        toolStripSeparatorEdit4.Name = "toolStripSeparatorEdit4";
+        //
         // toolStripDropDownButton1
-        // 
+        //
         this.toolStripDropDownButton1.Image = global::HostsFileEditor.Properties.Resources.Filter;
         resources.ApplyResources(this.toolStripDropDownButton1, "toolStripDropDownButton1");
         this.toolStripDropDownButton1.Name = "toolStripDropDownButton1";
@@ -1003,12 +935,7 @@ partial class MainForm
         // 
         toolStripSeparator21.Name = "toolStripSeparator21";
         resources.ApplyResources(toolStripSeparator21, "toolStripSeparator21");
-        // 
-        // toolStripSeparator20
-        // 
-        toolStripSeparator20.Name = "toolStripSeparator20";
-        resources.ApplyResources(toolStripSeparator20, "toolStripSeparator20");
-        // 
+        //
         // toolStripSeparator1
         // 
         toolStripSeparator1.Name = "toolStripSeparator1";
@@ -1082,25 +1009,27 @@ partial class MainForm
         this.contextMenuTray.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
         this.menuContextEdit,
         toolStripSeparator21,
-        this.menuContextDisable,
-        toolStripSeparator20,
+        this.menuTrayProfiles,
+        toolStripSeparatorTrayProfiles,
         this.contextMenuExit});
         this.contextMenuTray.Name = "contextMenuTray";
         resources.ApplyResources(this.contextMenuTray, "contextMenuTray");
-        // 
+        //
+        // menuTrayProfiles
+        //
+        this.menuTrayProfiles.Name = "menuTrayProfiles";
+        this.menuTrayProfiles.Text = "Profiles";
+        //
+        // toolStripSeparatorTrayProfiles
+        //
+        toolStripSeparatorTrayProfiles.Name = "toolStripSeparatorTrayProfiles";
+        //
         // menuContextEdit
         // 
         this.menuContextEdit.Name = "menuContextEdit";
         resources.ApplyResources(this.menuContextEdit, "menuContextEdit");
         this.menuContextEdit.Click += new System.EventHandler(this.OnEditClick);
-        // 
-        // menuContextDisable
-        // 
-        this.menuContextDisable.Image = global::HostsFileEditor.Properties.Resources.Disable;
-        this.menuContextDisable.Name = "menuContextDisable";
-        resources.ApplyResources(this.menuContextDisable, "menuContextDisable");
-        this.menuContextDisable.Click += new System.EventHandler(this.OnDisableHostsClick);
-        // 
+        //
         // contextMenuExit
         // 
         this.contextMenuExit.Name = "contextMenuExit";
@@ -1152,18 +1081,9 @@ partial class MainForm
         this.statusStrip.ResumeLayout(false);
         this.statusStrip.PerformLayout();
         ((System.ComponentModel.ISupportInitialize)(this.bindingSourceHostFile)).EndInit();
-        this.splitContainer.Panel1.ResumeLayout(false);
-        this.splitContainer.Panel2.ResumeLayout(false);
-        this.splitContainer.Panel2.PerformLayout();
-        ((System.ComponentModel.ISupportInitialize)(this.splitContainer)).EndInit();
-        this.splitContainer.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize)(this.dataGridViewHostsEntries)).EndInit();
         this.contextMenuGrid.ResumeLayout(false);
         ((System.ComponentModel.ISupportInitialize)(this.bindingSourceView)).EndInit();
-        ((System.ComponentModel.ISupportInitialize)(this.dataGridViewArchive)).EndInit();
-        ((System.ComponentModel.ISupportInitialize)(this.bindingSourceArchive)).EndInit();
-        this.toolStripArchive.ResumeLayout(false);
-        this.toolStripArchive.PerformLayout();
         this.menuStrip.ResumeLayout(false);
         this.menuStrip.PerformLayout();
         this.toolStrip.ResumeLayout(false);
@@ -1182,15 +1102,12 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuExit;
     private HostsFileEditor.Controls.HostsEntryDataGridView dataGridViewHostsEntries;
     private System.Windows.Forms.BindingSource bindingSourceView;
-    private System.Windows.Forms.ToolStripMenuItem menuRestoreDefaults;
     private HostsFileEditor.Controls.ToolStripEx toolStrip;
     private System.Windows.Forms.ToolStripButton buttonSave;
-    private System.Windows.Forms.ToolStripButton buttonDisable;
     private System.Windows.Forms.StatusStrip statusStrip;
     private System.Windows.Forms.ToolStripStatusLabel labelHostEntries;
     private System.Windows.Forms.ToolStripMenuItem menuSaveAs;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
-    private System.Windows.Forms.ToolStripMenuItem menuDisable;
     private System.Windows.Forms.ToolStripMenuItem menuImport;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
     private System.Windows.Forms.ToolStripMenuItem editToolStripMenuItem;
@@ -1204,8 +1121,6 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuMoveUp;
     private System.Windows.Forms.ToolStripMenuItem menuMoveDown;
     private System.Windows.Forms.ToolStripMenuItem viewToolStripMenuItem;
-    private System.Windows.Forms.ToolStripMenuItem menuViewArchive;
-    private System.Windows.Forms.ToolStripMenuItem menuArchive;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator7;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator8;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator10;
@@ -1231,7 +1146,6 @@ partial class MainForm
     private System.Windows.Forms.DataGridViewTextBoxColumn columnFiller;
     private System.Windows.Forms.NotifyIcon notifyIcon;
     private System.Windows.Forms.ContextMenuStrip contextMenuTray;
-    private System.Windows.Forms.ToolStripMenuItem menuContextDisable;
     private System.Windows.Forms.ToolStripMenuItem contextMenuExit;
     private System.Windows.Forms.ToolStripMenuItem menuContextEdit;
     private System.Windows.Forms.ToolStripStatusLabel labelLineCount;
@@ -1254,15 +1168,6 @@ partial class MainForm
     private System.Windows.Forms.ToolStripButton buttonRefresh;
     private System.Windows.Forms.ToolStripMenuItem menuTools;
     private System.Windows.Forms.ToolStripMenuItem menuPingIPs;
-    private System.Windows.Forms.ToolStripButton buttonViewArchive;
-    private System.Windows.Forms.SplitContainer splitContainer;
-    private HostsFileEditor.Controls.ToolStripEx toolStripArchive;
-    private System.Windows.Forms.ToolStripButton buttonDeleteArchive;
-    private HostsFileEditor.Controls.HostsArchiveDataGridView dataGridViewArchive;
-    private System.Windows.Forms.ToolStripButton buttonLoadArchive;
-    private System.Windows.Forms.DataGridViewTextBoxColumn fileNameDataGridViewTextBoxColumn;
-    private System.Windows.Forms.BindingSource bindingSourceArchive;
-    private System.Windows.Forms.ToolStripButton buttonArchive;
     private System.Windows.Forms.ToolStripMenuItem menuRemoveDefaultText;
 
     #endregion
@@ -1279,5 +1184,16 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem helpToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem aboutToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem openTextEditor;
+    private System.Windows.Forms.ToolStripMenuItem menuRawEdit;
+    private System.Windows.Forms.ToolStripMenuItem menuViewAuditLog;
+    private System.Windows.Forms.ToolStripButton buttonDuplicate;
+    private System.Windows.Forms.ToolStripButton buttonInsertAbove;
+    private System.Windows.Forms.ToolStripButton buttonInsertBelow;
+    private System.Windows.Forms.ToolStripButton buttonMoveUp;
+    private System.Windows.Forms.ToolStripButton buttonMoveDown;
+    private System.Windows.Forms.ToolStripButton buttonDelete;
+    private System.Windows.Forms.ToolStripMenuItem menuDiffBeforeSwitch;
+    private System.Windows.Forms.ToolStripMenuItem menuBarProfiles;
+    private System.Windows.Forms.ToolStripMenuItem menuTrayProfiles;
 }
 

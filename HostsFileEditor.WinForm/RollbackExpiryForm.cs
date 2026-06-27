@@ -21,6 +21,7 @@ internal class RollbackExpiryForm : Form
     public RollbackExpiryForm(RollbackTimer timer, bool externallyModified)
     {
         Text = "⏱  Timed profile expiring";
+        Icon = Properties.Resources.HostsFileEditor;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;

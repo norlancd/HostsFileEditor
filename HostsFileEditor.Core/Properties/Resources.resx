@@ -74,11 +74,11 @@
   <data name="LoseChangesQuestion" xml:space="preserve">
     <value>Are you sure you want to refresh hosts file?  You will lose any unsaved changes.</value>
   </data>
-  <data name="ArchiveExists" xml:space="preserve">
-    <value>Archive name already exists!</value>
+  <data name="ProfileExists" xml:space="preserve">
+    <value>Profile name already exists!</value>
   </data>
-  <data name="InputArchivePrompt" xml:space="preserve">
-    <value>Input archive name:</value>
+  <data name="InputProfilePrompt" xml:space="preserve">
+    <value>Input profile name:</value>
   </data>
   <data name="InvalidIPAddress" xml:space="preserve">
     <value>Invalid IP Address</value>

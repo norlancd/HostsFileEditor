@@ -25,18 +25,6 @@ namespace HostsFileEditor.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("False")]
-        public bool ArchiveVisible {
-            get {
-                return ((bool)(this["ArchiveVisible"]));
-            }
-            set {
-                this["ArchiveVisible"] = value;
-            }
-        }
-        
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("50, 50")]
         public global::System.Drawing.Point WindowLocation {
             get {
@@ -97,17 +85,6 @@ namespace HostsFileEditor.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("520")]
-        public int SplitterWidth {
-            get {
-                return ((int)(this["SplitterWidth"]));
-            }
-            set {
-                this["SplitterWidth"] = value;
-            }
-        }
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool DiffBeforeSwitchEnabled {
             get {
@@ -115,6 +92,30 @@ namespace HostsFileEditor.Properties {
             }
             set {
                 this["DiffBeforeSwitchEnabled"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string ActiveProfileName {
+            get {
+                return ((string)(this["ActiveProfileName"]));
+            }
+            set {
+                this["ActiveProfileName"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool HostsDisabled {
+            get {
+                return ((bool)(this["HostsDisabled"]));
+            }
+            set {
+                this["HostsDisabled"] = value;
             }
         }
     }

@@ -57,6 +57,15 @@ public class AuditLogger
         }
     }
 
+    /// <summary>
+    /// Convenience overload — every call site was independently constructing the same
+    /// "new AuditEntry { Action = nameof(...), Source = ... }" wrapper around a Detail
+    /// that's genuinely call-site-specific. This collapses the repeated wrapper while
+    /// still letting each caller build its own <see cref="AuditDetail"/> inline.
+    /// </summary>
+    public void Log(AuditActionType action, string source, AuditDetail? detail = null) =>
+        Log(new AuditEntry { Action = action.ToString(), Source = source, Detail = detail });
+
     public IEnumerable<AuditEntry> ReadEntries(DateTime? from = null, DateTime? to = null)
     {
         var results = new List<AuditEntry>();

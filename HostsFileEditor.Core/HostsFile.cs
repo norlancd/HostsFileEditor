@@ -30,10 +30,14 @@ public class HostsFile : INotifyPropertyChanged
         {
             UndoManager.Instance.ClearHistory();
 
-            return IsEnabled ? new HostsFile(DefaultHostFilePath) : new HostsFile(DefaultDisabledHostFilePath);
+            return new HostsFile(DefaultHostFilePath);
         });
 
     private readonly string _filePath;
+
+    // The disk content as of the last load/save through this app — used to detect
+    // edits made outside the app (e.g. a text editor) before they get clobbered.
+    private string[] _lastKnownDiskLines = [];
 
     private HostsFile(string filePath)
     {
@@ -51,7 +55,9 @@ public class HostsFile : INotifyPropertyChanged
                 File.Copy(filePath, backupPath, true);
             }
 
-            Entries = new HostsEntryList(File.ReadAllLines(filePath), RemoveDefaultText);
+            var lines = File.ReadAllLines(filePath);
+            Entries = new HostsEntryList(lines, RemoveDefaultText);
+            _lastKnownDiskLines = lines;
         }
 
         Entries.ListChanged += OnHostsEntriesListChanged;
@@ -71,41 +77,49 @@ public class HostsFile : INotifyPropertyChanged
 
     public int LineCount => Entries.Count;
 
-    public static void DisableHostsFile()
+    private bool _hasUnsavedChanges;
+
+    /// <summary>
+    /// True if in-memory <see cref="Entries"/> have changed since the last <see cref="Save"/>
+    /// (or load). Drives the "unsaved changes" indicator in the UI.
+    /// </summary>
+    public bool HasUnsavedChanges
     {
-        using (FileEx.DisableAttributes(DefaultHostFilePath, FileAttributes.ReadOnly))
+        get => _hasUnsavedChanges;
+        private set
         {
-            File.Move(DefaultHostFilePath, DefaultDisabledHostFilePath);
-            NativeMethods.FlushDns();
+            if (_hasUnsavedChanges == value) return;
+            _hasUnsavedChanges = value;
+            OnPropertyChanged(nameof(HasUnsavedChanges));
         }
     }
 
-    public static void EnableHostsFile()
-    {
-        using (FileEx.DisableAttributes(DefaultDisabledHostFilePath, FileAttributes.ReadOnly))
-        {
-            File.Move(DefaultDisabledHostFilePath, DefaultHostFilePath);
-            NativeMethods.FlushDns();
-        }
-    }
-
-    public void Import(string importFilePath)
+    public void Import(string importFilePath, bool? removeDefaultTextOverride = null)
     {
         if (_filePath != importFilePath)
         {
             Entries.BatchUpdate(() =>
             {
                 Entries.Clear();
-                Entries.AddLines(File.ReadAllLines(importFilePath), RemoveDefaultText);
+                Entries.AddLines(File.ReadAllLines(importFilePath), removeDefaultTextOverride ?? RemoveDefaultText);
             });
         }
     }
 
-    public void Archive(string name)
+    public void ImportFromLines(IEnumerable<string> lines)
     {
-        var archive = new HostsArchive(name);
-        SaveAs(archive.FilePath);
-        HostsArchiveList.Instance.Add(archive);
+        Entries.BatchUpdate(() =>
+        {
+            Entries.Clear();
+            Entries.AddLines(lines, RemoveDefaultText);
+        });
+    }
+
+    public void SaveAsProfile(string name)
+    {
+        var profile = new HostsProfile(name);
+        SaveAs(profile.FilePath);
+        HostsProfileList.Instance.Add(profile);
     }
 
     public void RestoreDefault()
@@ -121,11 +135,76 @@ public class HostsFile : INotifyPropertyChanged
         });
     }
 
+    /// <summary>
+    /// Disables hosts resolution entirely by moving the live hosts file out of the
+    /// way (Windows then has no hosts file at all, unlike any profile which always
+    /// has content, even "Default"). Clears the in-memory grid too, so a stray
+    /// File &gt; Save while disabled can't silently resurrect the old content instead
+    /// of leaving hosts genuinely absent.
+    /// </summary>
+    public void DisableAll()
+    {
+        UndoManager.Instance.ClearHistory();
+
+        if (File.Exists(DefaultHostFilePath))
+        {
+            using (FileEx.DisableAttributes(DefaultHostFilePath, FileAttributes.ReadOnly))
+            {
+                if (File.Exists(DefaultDisabledHostFilePath))
+                {
+                    using (FileEx.DisableAttributes(DefaultDisabledHostFilePath, FileAttributes.ReadOnly))
+                    {
+                        File.Delete(DefaultDisabledHostFilePath);
+                    }
+                }
+
+                File.Move(DefaultHostFilePath, DefaultDisabledHostFilePath);
+            }
+        }
+
+        NativeMethods.FlushDns();
+
+        Entries.BatchUpdate(() => Entries.Clear());
+        _lastKnownDiskLines = [];
+        HasUnsavedChanges = false;
+    }
+
     public void Save()
     {
-        AutoBackupService.Instance.CreateBackup();
         SaveAs(_filePath);
         NativeMethods.FlushDns();
+        _lastKnownDiskLines = Entries.Select(entry => entry.UnparsedText).ToArray();
+        HasUnsavedChanges = false;
+    }
+
+    /// <summary>
+    /// True if the on-disk hosts file has changed since this app last loaded or
+    /// saved it (e.g. edited directly in a text editor). Check before <see cref="Save"/>
+    /// to avoid silently clobbering an external edit.
+    /// </summary>
+    public bool WasModifiedExternally()
+    {
+        if (!File.Exists(_filePath)) return false;
+
+        try
+        {
+            return !File.ReadAllLines(_filePath).SequenceEqual(_lastKnownDiskLines);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Acknowledges an external change without reloading it — keeps current in-memory
+    /// edits as-is, but stops <see cref="WasModifiedExternally"/> from reporting the
+    /// same already-dismissed edit again.
+    /// </summary>
+    public void AcknowledgeExternalChange()
+    {
+        try { _lastKnownDiskLines = File.ReadAllLines(_filePath); }
+        catch (IOException) { }
     }
 
     public void SaveAs(string saveFilePath)
@@ -154,13 +233,18 @@ public class HostsFile : INotifyPropertyChanged
     {
         UndoManager.Instance.ClearHistory();
 
+        var lines = File.ReadAllLines(_filePath);
+
         Entries.BatchUpdate(() =>
         {
             Entries.Clear();
-            Entries.AddLines(File.ReadAllLines(_filePath), removeDefault);
+            Entries.AddLines(lines, removeDefault);
         });
 
+        _lastKnownDiskLines = lines;
+
         NativeMethods.FlushDns();
+        HasUnsavedChanges = false;
     }
 
     protected void OnPropertyChanged(string property) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
@@ -169,5 +253,11 @@ public class HostsFile : INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(LineCount));
         OnPropertyChanged(nameof(EnabledCount));
+
+        // Don't trust the event alone — HostsEntry also raises PropertyChanged(IpAddress)
+        // for purely cosmetic reasons (e.g. a failed background ping sets an error message
+        // and re-raises IpAddress just to refresh the grid's error glyph, without actually
+        // changing the IP). Compare real serialized content instead of reacting to the event.
+        HasUnsavedChanges = !Entries.Select(entry => entry.UnparsedText).SequenceEqual(_lastKnownDiskLines);
     }
 }

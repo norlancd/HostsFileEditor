@@ -66,7 +66,7 @@ public partial class InputForm : Form
     /// <param name="e">The <see cref="System.EventArgs"/> instance containing the event data.</param>
     private void OnTextChanged(object sender, EventArgs e)
     {
-        buttonOk.Enabled = HostsArchive.Validate(Input, out var error);
+        buttonOk.Enabled = HostsProfile.Validate(Input, out var error);
         errorProvider.SetError(textBox, error);
     }
 }

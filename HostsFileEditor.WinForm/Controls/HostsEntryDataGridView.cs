@@ -127,12 +127,11 @@ internal sealed class HostsEntryDataGridView : DataGridView
             // After sorting twice (ascending then descending) clear the sort
             if (_currentSortState > 2)
             {
-                BeginInvoke(
-                    (MethodInvoker)delegate ()
-                    {
-                        Application.DoEvents();
-                        ClearSort?.Invoke();
-                    });
+                // BeginInvoke alone already defers this past the current message-pump
+                // cycle (the in-progress sort click); Application.DoEvents() here would
+                // add reentrant message processing for no benefit and a real risk of
+                // re-entering this handler before it's done.
+                BeginInvoke((MethodInvoker)(() => ClearSort?.Invoke()));
 
                 _currentSortState = 0;
                 _lastSortedColumn = null;

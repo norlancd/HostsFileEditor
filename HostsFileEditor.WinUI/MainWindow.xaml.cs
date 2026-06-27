@@ -19,13 +19,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 {
     internal ObservableCollection<HostsEntry> Entries { get; } = [];
 
-    internal ObservableCollection<HostsArchive> Archives { get; } = [];
+    internal ObservableCollection<HostsProfile> Archives { get; } = [];
 
     private IEnumerable<HostsEntry>? _clipboardEntries;
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    public bool IsDisabledHosts => !HostsFile.IsEnabled;
 
     public bool IsPingIPs { get; private set; }
 
@@ -397,21 +395,6 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnDisableHostsClick(object sender, RoutedEventArgs e)
-    {
-        var isChecked = !HostsFile.IsEnabled; // current binding value
-        if (!isChecked)
-        {
-            HostsFile.DisableHostsFile();
-        }
-        else
-        {
-            HostsFile.EnableHostsFile();
-        }
-
-        OnPropertyChanged(nameof(IsDisabledHosts));
-    }
-
     private void OnRefreshAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
         => TryInvokeUnlessTextBox(() => OnRefreshClick(this, new RoutedEventArgs()), args);
 
@@ -526,14 +509,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!string.IsNullOrWhiteSpace(name))
         {
-            HostsFile.Instance.Archive(name.Trim());
+            HostsFile.Instance.SaveAsProfile(name.Trim());
             RefreshArchives();
         }
     }
 
     private void OnArchiveLoadClick(object sender, RoutedEventArgs e)
     {
-        if (ArchiveList.SelectedItem is HostsArchive archive)
+        if (ArchiveList.SelectedItem is HostsProfile archive)
         {
             HostsFile.Instance.Import(archive.FilePath);
             RefreshEntries();
@@ -542,9 +525,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnArchiveDeleteClick(object sender, RoutedEventArgs e)
     {
-        if (ArchiveList.SelectedItem is HostsArchive archive)
+        if (ArchiveList.SelectedItem is HostsProfile archive)
         {
-            HostsArchiveList.Instance.Delete(archive);
+            HostsProfileList.Instance.Delete(archive);
             RefreshArchives();
         }
     }
@@ -700,7 +683,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshArchives()
     {
         Archives.Clear();
-        foreach (var a in HostsArchiveList.Instance)
+        foreach (var a in HostsProfileList.Instance)
         {
             Archives.Add(a);
         }
@@ -746,7 +729,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (ArchiveList is not null)
         {
-            var hasSelection = ArchiveList.SelectedItem is HostsArchive;
+            var hasSelection = ArchiveList.SelectedItem is HostsProfile;
             if (ArchiveLoadButton is not null) ArchiveLoadButton.IsEnabled = hasSelection;
             if (ArchiveDeleteButton is not null) ArchiveDeleteButton.IsEnabled = hasSelection;
         }

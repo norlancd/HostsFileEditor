@@ -9,7 +9,6 @@ Note: Todos los cambios deben ser en el proyecto de winform.
 | Priority | Spec | Rationale |
 |---|---|---|
 | P0 | [SPEC-09 Audit Log](SPEC-09-audit-log.md) | Security baseline — must exist before adding new write paths |
-| P1 | [SPEC-11 Auto Backup](SPEC-11-auto-backup.md) | Zero-regression safety net, minimal complexity |
 | P1 | [SPEC-06 Conflict Detection](SPEC-06-conflict-detection.md) | Read-only analysis, no new write paths |
 | P2 | [SPEC-01 Profiles + Hotkeys](SPEC-01-profiles-global-hotkeys.md) | Highest daily-use value |
 | P2 | [SPEC-02 Diff Before Switch](SPEC-02-diff-before-switch.md) | Required companion to SPEC-01 |

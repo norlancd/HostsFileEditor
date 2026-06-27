@@ -9,7 +9,7 @@ internal sealed class ProfileSettingsForm : Form
         Keys.Control | Keys.Alt | Keys.Delete,
     };
 
-    private readonly HostsArchive _archive;
+    private readonly HostsProfile _profile;
     private HostsProfileMetadata _metadata;
 
     private TextBox _txtDescription = null!;
@@ -24,10 +24,10 @@ internal sealed class ProfileSettingsForm : Form
     private int _hotkeyKey;
     private string _color = string.Empty;
 
-    public ProfileSettingsForm(HostsArchive archive)
+    public ProfileSettingsForm(HostsProfile profile)
     {
-        _archive = archive;
-        _metadata = archive.Metadata ?? new HostsProfileMetadata { Name = archive.FileName };
+        _profile = profile;
+        _metadata = profile.Metadata ?? new HostsProfileMetadata { Name = profile.FileName };
         _hotkeyModifiers = _metadata.HotkeyModifiers;
         _hotkeyKey = _metadata.HotkeyKey;
         _color = _metadata.Color;
@@ -38,7 +38,8 @@ internal sealed class ProfileSettingsForm : Form
 
     private void BuildUI()
     {
-        Text = $"Profile Settings — {_archive.FileName}";
+        Text = $"Profile Settings — {_profile.FileName}";
+        Icon = Properties.Resources.HostsFileEditor;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -210,26 +211,24 @@ internal sealed class ProfileSettingsForm : Form
 
     private void OnOkClick(object? sender, EventArgs e)
     {
-        // Check chord conflict with other profiles
-        if (_hotkeyKey != 0 &&
-            HotkeyRegistry.IsChordTaken(_hotkeyModifiers, _hotkeyKey, _archive))
+        // Actually attempt the registration now, synchronously, so a conflict — with
+        // another profile OR with some other application's global hotkey — is reported
+        // right here instead of via a tray balloon after this dialog has already closed.
+        if (!HotkeyRegistry.TryAssignHotkey(_profile, _hotkeyModifiers, _hotkeyKey, out var error))
         {
-            _lblError.Text = "This hotkey is already assigned to another profile.";
+            _lblError.Text = error;
             DialogResult = DialogResult.None;
             return;
         }
 
-        var meta = _archive.Metadata ?? new HostsProfileMetadata();
-        meta.Name = _archive.FileName;
+        var meta = _profile.Metadata ?? new HostsProfileMetadata();
+        meta.Name = _profile.FileName;
         meta.Description = _txtDescription.Text;
         meta.SortOrder = (int)_nudSortOrder.Value;
         meta.Color = _color;
-        meta.HotkeyModifiers = _hotkeyModifiers;
+        meta.HotkeyModifiers = _hotkeyKey == 0 ? 0 : _hotkeyModifiers;
         meta.HotkeyKey = _hotkeyKey;
-        meta.Save(_archive.FilePath);
-        _archive.ReloadMetadata();
-
-        HotkeyRegistry.Unregister(_archive);
-        HotkeyRegistry.Register(_archive);
+        meta.Save(_profile.FilePath);
+        _profile.ReloadMetadata();
     }
 }

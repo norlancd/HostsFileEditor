@@ -2,9 +2,11 @@ namespace HostsFileEditor;
 
 internal partial class MainForm
 {
+    private ToolStripStatusLabel? _statusUnsavedLabel;
     private ToolStripStatusLabel? _statusProfileLabel;
     private ToolStripStatusLabel? _statusTimerLabel;
     private System.Windows.Forms.Timer? _timerCountdownTick;
+    private Bitmap? _statusProfileColorBitmap;
 
     private void SetupRollbackTimer()
     {
@@ -16,7 +18,8 @@ internal partial class MainForm
         svc.StateChanged += OnRollbackStateChanged;
 
         // Subscribe to profile changes to keep the status bar up to date
-        ProfileSwitcher.ActiveArchiveChanged += RefreshStatusBar;
+        ProfileSwitcher.ActiveProfileChanged += RefreshStatusBar;
+        HostsFile.Instance.PropertyChanged += OnHostsFilePropertyChanged;
 
         BuildStatusBarLabels();
 
@@ -28,11 +31,14 @@ internal partial class MainForm
             svc.TimerExpired -= OnRollbackTimerExpired;
             svc.Notification -= OnRollbackNotification;
             svc.StateChanged -= OnRollbackStateChanged;
-            ProfileSwitcher.ActiveArchiveChanged -= RefreshStatusBar;
+            ProfileSwitcher.ActiveProfileChanged -= RefreshStatusBar;
+            HostsFile.Instance.PropertyChanged -= OnHostsFilePropertyChanged;
             _timerCountdownTick?.Dispose();
+            _statusProfileColorBitmap?.Dispose();
         };
 
         RefreshStatusBar();
+        RefreshUnsavedIndicator();
 
         if (svc.PendingStartupNotification is { } notice)
             notifyIcon.ShowBalloonTip(5000, "Rollback Timer", notice, ToolTipIcon.Info);
@@ -42,6 +48,18 @@ internal partial class MainForm
 
     private void BuildStatusBarLabels()
     {
+        _statusUnsavedLabel = new ToolStripStatusLabel
+        {
+            Text = "●  Unsaved changes",
+            ForeColor = Color.FromArgb(210, 110, 0),
+            Font = new Font(statusStrip.Font, FontStyle.Bold),
+            BorderStyle = Border3DStyle.SunkenOuter,
+            BorderSides = ToolStripStatusLabelBorderSides.Left,
+            AutoSize = true,
+            Padding = new Padding(6, 0, 6, 0),
+            Visible = false
+        };
+
         // Spring item pushes everything after it to the right
         var spring = new ToolStripStatusLabel { Spring = true };
 
@@ -67,8 +85,22 @@ internal partial class MainForm
         };
         _statusTimerLabel.Click += OnTimerLabelClick;
 
-        statusStrip.Items.AddRange([spring, _statusProfileLabel, _statusTimerLabel]);
+        statusStrip.Items.AddRange([_statusUnsavedLabel, spring, _statusProfileLabel, _statusTimerLabel]);
         statusStrip.ShowItemToolTips = true;
+    }
+
+    private void OnHostsFilePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(HostsFile.HasUnsavedChanges))
+            RefreshUnsavedIndicator();
+    }
+
+    private void RefreshUnsavedIndicator()
+    {
+        if (InvokeRequired) { Invoke(RefreshUnsavedIndicator); return; }
+        if (_statusUnsavedLabel == null) return;
+
+        _statusUnsavedLabel.Visible = HostsFile.Instance.HasUnsavedChanges;
     }
 
     private void RefreshStatusBar()
@@ -76,10 +108,31 @@ internal partial class MainForm
         if (InvokeRequired) { Invoke(RefreshStatusBar); return; }
         if (_statusProfileLabel == null) return;
 
-        var active = ProfileSwitcher.ActiveArchive;
-        _statusProfileLabel.Text = active != null
-            ? $"Profile: {active.FileName}"
-            : "Profile: Default";
+        var active = ProfileSwitcher.ActiveProfile;
+        _statusProfileLabel.Text = ProfileSwitcher.IsHostsDisabled
+            ? "Profile: Disabled"
+            : active is { IsDefault: false }
+                ? $"Profile: {active.FileName}"
+                : "Profile: Default";
+
+        // Color swatch from profile metadata
+        _statusProfileColorBitmap?.Dispose();
+        _statusProfileColorBitmap = null;
+        var colorHex = active?.Metadata?.Color;
+        if (!string.IsNullOrEmpty(colorHex))
+        {
+            try
+            {
+                _statusProfileColorBitmap = CreateColorSwatch(ColorTranslator.FromHtml(colorHex), 10, 10);
+                _statusProfileLabel.Image = _statusProfileColorBitmap;
+                _statusProfileLabel.ImageScaling = ToolStripItemImageScaling.None;
+            }
+            catch { _statusProfileLabel.Image = null; }
+        }
+        else
+        {
+            _statusProfileLabel.Image = null;
+        }
 
         RefreshTimerCountdown();
     }
@@ -165,13 +218,13 @@ internal partial class MainForm
             menu.Items.Add(item);
         }
 
-        AddSnooze("Snooze 15 minutes", TimeSpan.FromMinutes(15));
-        AddSnooze("Snooze 30 minutes", TimeSpan.FromMinutes(30));
-        AddSnooze("Snooze 1 hour", TimeSpan.FromHours(1));
-        AddSnooze("Snooze 2 hours", TimeSpan.FromHours(2));
+        AddSnooze("Snooze 15 Minutes", TimeSpan.FromMinutes(15));
+        AddSnooze("Snooze 30 Minutes", TimeSpan.FromMinutes(30));
+        AddSnooze("Snooze 1 Hour", TimeSpan.FromHours(1));
+        AddSnooze("Snooze 2 Hours", TimeSpan.FromHours(2));
         menu.Items.Add(new ToolStripSeparator());
 
-        var cancelItem = new ToolStripMenuItem("Cancel timer — keep permanently");
+        var cancelItem = new ToolStripMenuItem("Cancel Timer — Keep Permanently");
         cancelItem.Click += (_, _) =>
         {
             var profileName = svc.ActiveTimer?.ActivatedProfileName ?? string.Empty;
@@ -236,6 +289,7 @@ internal partial class MainForm
         {
             case RollbackExpiryForm.ExpiryResult.Revert:
                 RollbackTimerService.Instance.ExecuteRevert(autoReverted: form.WasAutoReverted);
+                SyncActiveProfileAfterRevert();
                 break;
             case RollbackExpiryForm.ExpiryResult.Snooze:
                 RollbackTimerService.Instance.Snooze(TimeSpan.FromMinutes(30));
@@ -245,12 +299,12 @@ internal partial class MainForm
                 break;
         }
 
-        HostsArchiveList.Instance.Refresh();
+        HostsProfileList.Instance.Refresh();
     }
 
     // ── Activate with timer ───────────────────────────────────────────────────
 
-    private void OnActivateWithTimerClick(HostsArchive archive)
+    private void OnActivateWithTimerClick(HostsProfile profile)
     {
         var svc = RollbackTimerService.Instance;
 
@@ -268,8 +322,8 @@ internal partial class MainForm
             return;
 
         svc.Start(
-            archive.FileName,
+            profile.FileName,
             durationForm.SelectedDuration.Value,
-            () => ProfileSwitcher.Activate(archive, ProfileSwitcher.TriggerSource.TrayMenu));
+            () => ProfileSwitcher.Activate(profile, ProfileSwitcher.TriggerSource.TrayMenu));
     }
 }
