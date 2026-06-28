@@ -27,7 +27,7 @@ internal static class Program
             Application.ThreadException += OnApplicationThreadException;
             Application.ApplicationExit += (_, _) => HotkeyRegistry.UnregisterAll();
 
-            _mainForm = new MainForm();
+            _mainForm = new MainForm(AuditLogger.Instance, RollbackTimerService.Instance);
             Application.Run(_mainForm);
         }
         else

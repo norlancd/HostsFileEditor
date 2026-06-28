@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace HostsFileEditor;
 
-public class HostsProfileList : BindingList<HostsProfile>
+public class HostsProfileList : BindingList<HostsProfile>, IHostsProfileList
 {
     public static readonly string ProfileDirectory =
         Path.Combine(HostsFile.DefaultHostFileDirectory, "profiles");

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace HostsFileEditor;
 
-public class RollbackTimerService
+public class RollbackTimerService : IRollbackTimerService
 {
     private static readonly Lazy<RollbackTimerService> _instance = new(() => new RollbackTimerService());
     public static RollbackTimerService Instance => _instance.Value;
@@ -17,6 +17,7 @@ public class RollbackTimerService
     private readonly object _lock = new();
     private System.Threading.Timer? _timer;
     private SynchronizationContext? _uiContext;
+    private IAuditLogger _auditLogger = AuditLogger.Instance;
     private static string? _cachedVersion;
 
     public RollbackTimer? ActiveTimer { get; private set; }
@@ -36,6 +37,13 @@ public class RollbackTimerService
     private RollbackTimerService() { }
 
     public void SetUiContext(SynchronizationContext? ctx) => _uiContext = ctx;
+
+    /// <summary>
+    /// Defaults to <see cref="AuditLogger.Instance"/> — call to substitute a different
+    /// logger (e.g. a test double). Setter-style rather than constructor injection
+    /// since this is itself a lazily-constructed singleton with a parameterless ctor.
+    /// </summary>
+    public void SetAuditLogger(IAuditLogger auditLogger) => _auditLogger = auditLogger;
 
     // ── Start ────────────────────────────────────────────────────────────────
 
@@ -90,7 +98,7 @@ public class RollbackTimerService
         lock (_lock)
         {
             // Audit log
-            AuditLogger.Instance.Log(AuditActionType.TimedProfileSwitch, AuditSource.MainForm, new AuditDetail
+            _auditLogger.Log(AuditActionType.TimedProfileSwitch, AuditSource.MainForm, new AuditDetail
             {
                 ProfileTo = profileName,
                 RollbackTimerMinutes = (int)Math.Round(ActiveTimer!.ExpiresAt.Subtract(ActiveTimer.ActivatedAt).TotalMinutes)
@@ -123,7 +131,7 @@ public class RollbackTimerService
             if (!File.Exists(snapshotPath))
             {
                 Notification?.Invoke(this, $"Rollback snapshot is missing. Auto-revert for '{profileFrom}' cancelled.");
-                AuditLogger.Instance.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
+                _auditLogger.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
                     new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom });
                 CleanupState(RollbackTimerStatus.Cancelled);
                 return;
@@ -148,7 +156,7 @@ public class RollbackTimerService
 
         try { File.Delete(snapshotPath!); } catch (IOException) { }
 
-        AuditLogger.Instance.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
+        _auditLogger.Log(AuditActionType.RollbackExecuted, AuditSource.RollbackTimer,
             new AuditDetail { AutoReverted = autoReverted, ProfileReverted = profileFrom });
 
         Notification?.Invoke(this, $"Hosts file reverted to configuration before '{profileFrom}' was activated.");
@@ -192,7 +200,7 @@ public class RollbackTimerService
 
         try { File.Delete(snapshotPath!); } catch (IOException) { }
 
-        AuditLogger.Instance.Log(AuditActionType.TimerCancelled, AuditSource.MainForm,
+        _auditLogger.Log(AuditActionType.TimerCancelled, AuditSource.MainForm,
             new AuditDetail { ProfileKept = profileName });
 
         StateChanged?.Invoke(this, EventArgs.Empty);

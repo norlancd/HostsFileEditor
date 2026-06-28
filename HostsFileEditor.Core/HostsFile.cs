@@ -6,7 +6,7 @@ using System.ComponentModel;
 
 namespace HostsFileEditor;
 
-public class HostsFile : INotifyPropertyChanged
+public class HostsFile : IHostsFile
 {
     public static readonly string DefaultHostFileDirectory =
         Path.Combine(

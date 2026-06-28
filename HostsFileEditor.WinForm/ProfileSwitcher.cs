@@ -90,6 +90,72 @@ internal static class ProfileSwitcher
         ActiveProfileChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Resolves which profile was active in a previous session — by saved name
+    /// first, falling back to comparing file contents if it no longer matches
+    /// (e.g. profile renamed/deleted, or hosts file edited outside this app) — and
+    /// restores tracking accordingly. Call once at startup.
+    /// </summary>
+    public static void RestoreFromSettings()
+    {
+        if (!HostsFile.IsEnabled)
+        {
+            RestoreDisabled();
+            return;
+        }
+
+        var savedName = Settings.Default.ActiveProfileName;
+
+        var match = !string.IsNullOrEmpty(savedName)
+            ? HostsProfileList.Instance.FirstOrDefault(a => a.FileName == savedName)
+            : null;
+
+        match ??= DetectActiveByContent();
+
+        if (match != null)
+        {
+            RestoreActive(match);
+        }
+    }
+
+    /// <summary>
+    /// Re-syncs which profile is tracked as active after something wrote the live
+    /// hosts file directly, bypassing <see cref="Activate"/> (e.g. a rollback-timer
+    /// revert) — without this, the Profiles menu checkmark and status bar would
+    /// keep pointing at whatever was active before that direct write.
+    /// </summary>
+    public static void SyncActiveAfterExternalWrite()
+    {
+        var match = DetectActiveByContent();
+        if (match != null)
+            RestoreActive(match);
+        else
+            ClearActive();
+    }
+
+    private static HostsProfile? DetectActiveByContent()
+    {
+        try
+        {
+            var hostsLines = File.ReadAllLines(HostsFile.DefaultHostFilePath);
+
+            foreach (var profile in HostsProfileList.Instance)
+            {
+                if (File.Exists(profile.FilePath) &&
+                    File.ReadAllLines(profile.FilePath).SequenceEqual(hostsLines))
+                {
+                    return profile;
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Hosts file unreadable — leave active profile undetermined
+        }
+
+        return null;
+    }
+
     // Set by MainForm to display tray balloon errors
     public static Action<string>? ProfileError { get; set; }
 

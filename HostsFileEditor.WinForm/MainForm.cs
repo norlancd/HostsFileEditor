@@ -2,7 +2,6 @@ using Equin.ApplicationFramework;
 using HostsFileEditor.Extensions;
 using HostsFileEditor.Properties;
 using HostsFileEditor.Utilities;
-using System.Text;
 
 namespace HostsFileEditor;
 
@@ -22,11 +21,6 @@ internal partial class MainForm : Form
     private BindingListView<HostsEntry>? _hostEntriesView;
 
     /// <summary>
-    /// The clipboard host entries.
-    /// </summary>
-    private IEnumerable<HostsEntry>? _clipboardEntries;
-
-    /// <summary>
     /// Determines if user is currently adding a new row.  Used for ugly
     /// hacks setup in load event.
     /// </summary>
@@ -44,11 +38,26 @@ internal partial class MainForm : Form
     /// <summary>Owns watching for external edits to the hosts/profile files — extracted to its own class (C1).</summary>
     private ProfileExternalChangeWatcher? _externalChangeWatcher;
 
+    /// <summary>Owns the Profiles menu and all profile CRUD actions — extracted to its own class (C1).</summary>
+    private ProfilesMenuController? _profilesMenu;
+
+    /// <summary>Owns the grid's row-editing commands (Copy/Cut/Paste/Delete/Duplicate/Move/Insert/Check/Uncheck) — extracted to its own class (C1).</summary>
+    private GridEditCommands? _gridCommands;
+
+    /// <summary>Injected rather than read from <see cref="AuditLogger.Instance"/> directly — part of the DIP cleanup.</summary>
+    private readonly IAuditLogger _auditLogger;
+
+    /// <summary>Injected rather than read from <see cref="RollbackTimerService.Instance"/> directly — part of the DIP cleanup.</summary>
+    private readonly IRollbackTimerService _rollbackTimerService;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="MainForm"/> class.
     /// </summary>
-    public MainForm()
+    public MainForm(IAuditLogger auditLogger, IRollbackTimerService rollbackTimerService)
     {
+        _auditLogger = auditLogger;
+        _rollbackTimerService = rollbackTimerService;
+
         InitializeComponent();
 
         saveFileDialog.InitialDirectory = HostsFile.DefaultHostFilePath;
@@ -58,6 +67,12 @@ internal partial class MainForm : Form
         columnComment.DefaultCellStyle.NullValue = null;
         columnIpAddress.DefaultCellStyle.NullValue = null;
         columnHostnames.DefaultCellStyle.NullValue = null;
+
+        _gridCommands = new GridEditCommands(
+            this, dataGridViewHostsEntries, _auditLogger,
+            menuCopy, menuContextCopy,
+            menuCut, menuContextCut,
+            menuPaste, menuContextPaste);
     }
 
     private const int WmHotkey = 0x0312;
@@ -94,42 +109,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnCopyClick(object sender, EventArgs e)
-    {
-        // HACK: If editing cell forward cut/copy/paste command
-        // to editing control
-        if (dataGridViewHostsEntries.IsCurrentCellInEditMode)
-        {
-            var keys = menuCopy.ShortcutKeys;
-            menuCopy.ShortcutKeys = Keys.None;
-            menuContextCopy.ShortcutKeys = Keys.None;
-            SendKeys.SendWait("^(C)");
-            menuCopy.ShortcutKeys = keys;
-            menuContextCopy.ShortcutKeys = keys;
-            return;
-        }
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            _clipboardEntries = [.. dataGridViewHostsEntries.SelectedHostEntries.Select(entry => new HostsEntry(entry))];
-        }
-        else
-        {
-            StringBuilder builder = new();
-
-            foreach (
-                DataGridViewCell cell in
-                dataGridViewHostsEntries.SelectedCells)
-            {
-                if (cell.ValueType == typeof(string))
-                {
-                    builder.Append(cell.Value?.ToString());
-                }
-            }
-
-            Clipboard.SetText(builder.ToString());
-        }
-    }
+    private void OnCopyClick(object sender, EventArgs e) => _gridCommands!.Copy(sender, e);
 
     /// <summary>
     /// Occurs when cut clicked.
@@ -140,52 +120,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnCutClick(object sender, EventArgs e)
-    {
-        // HACK: If editing cell forward cut/copy/paste command
-        // to editing control
-        if (dataGridViewHostsEntries.IsCurrentCellInEditMode)
-        {
-            var keys = menuCut.ShortcutKeys;
-            menuCut.ShortcutKeys = Keys.None;
-            menuContextCut.ShortcutKeys = Keys.None;
-            SendKeys.SendWait("^(X)");
-            menuCut.ShortcutKeys = keys;
-            menuContextCut.ShortcutKeys = keys;
-            return;
-        }
-
-        dataGridViewHostsEntries.CancelEdit();
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            _clipboardEntries = [.. dataGridViewHostsEntries.SelectedHostEntries];
-            var snapshots = _clipboardEntries.Select(ToSnapshot).ToList();
-
-            HostsFile.Instance.Entries.Remove(_clipboardEntries);
-            foreach (var snap in snapshots)
-            {
-                AuditLogger.Instance.Log(AuditActionType.EntryRemoved, AuditSource.MainForm, new AuditDetail { Entry = snap });
-            }
-        }
-        else
-        {
-            StringBuilder builder = new();
-
-            foreach (
-                DataGridViewCell cell in
-                dataGridViewHostsEntries.SelectedCells)
-            {
-                if (cell.ValueType == typeof(string))
-                {
-                    builder.Append(cell.Value?.ToString());
-                    cell.Value = string.Empty;
-                }
-            }
-
-            Clipboard.SetText(builder.ToString());
-        }
-    }
+    private void OnCutClick(object sender, EventArgs e) => _gridCommands!.Cut(sender, e);
 
     /// <summary>
     /// Occurs when delete clicked.
@@ -196,39 +131,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnDeleteClick(object sender, EventArgs e)
-    {
-        List<HostsEntry> entries;
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            entries = dataGridViewHostsEntries.SelectedHostEntries.ToList();
-        }
-        else if (dataGridViewHostsEntries.CurrentHostEntry != null)
-        {
-            // Clearing a single cell's text is never useful on its own — it just
-            // leaves a half-blank row — so this always acts on the whole row instead.
-            entries = [dataGridViewHostsEntries.CurrentHostEntry];
-        }
-        else
-        {
-            return;
-        }
-
-        var message = entries.Count == 1
-            ? $"Delete this entry?\n\n{entries[0].UnparsedText}"
-            : $"Delete these {entries.Count} entries?";
-
-        var result = MessageBox.Show(this, message, Text,
-            MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
-        if (result != DialogResult.Yes) return;
-
-        var snapshots = entries.Select(ToSnapshot).ToList();
-        HostsFile.Instance.Entries.Remove(entries);
-        foreach (var snap in snapshots)
-        {
-            AuditLogger.Instance.Log(AuditActionType.EntryRemoved, AuditSource.MainForm, new AuditDetail { Entry = snap });
-        }
-    }
+    private void OnDeleteClick(object sender, EventArgs e) => _gridCommands!.Delete(sender, e);
 
     /// <summary>
     /// Occurs when duplicate clicked.
@@ -239,26 +142,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnDuplicateClick(object sender, EventArgs e)
-    {
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            foreach (var entry in dataGridViewHostsEntries.SelectedHostEntries)
-            {
-                HostsFile.Instance.Entries.InsertAfter(entry, new HostsEntry(entry));
-            }
-        }
-        else if (dataGridViewHostsEntries.CurrentRow?.DataBoundItem != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.InsertAfter(
-                    currentEntry,
-                    new HostsEntry(currentEntry));
-            }
-        }
-    }
+    private void OnDuplicateClick(object sender, EventArgs e) => _gridCommands!.Duplicate(sender, e);
 
     /// <summary>
     /// The on edit click.
@@ -370,15 +254,15 @@ internal partial class MainForm : Form
 
         InitializeHotkeySupport();
         SetupAuditLoggerNotifications();
-        AuditLogger.Instance.Initialize(); // after subscription so IntegrityFailed is handled
+        _auditLogger.Initialize(); // after subscription so IntegrityFailed is handled
         TakeBaselineSnapshot();
         // RecoverFromRestart() must run before SetupRollbackTimer() — it's what
         // populates PendingStartupNotification, which SetupRollbackTimer() checks
         // immediately to show the "timer expired while closed" balloon. Calling it
         // after SetupRollbackTimer() (as before) meant that check always saw null.
-        var startupRevertMessage = RollbackTimerService.Instance.RecoverFromRestart();
+        var startupRevertMessage = _rollbackTimerService.RecoverFromRestart();
         if (startupRevertMessage != null)
-            SyncActiveProfileAfterRevert();
+            ProfileSwitcher.SyncActiveAfterExternalWrite();
         SetupRollbackTimer();
 
         _externalChangeWatcher = new ProfileExternalChangeWatcher(this, TakeBaselineSnapshot);
@@ -492,57 +376,16 @@ internal partial class MainForm : Form
         using var inputDialog = new InputForm();
         inputDialog.Text = Text;
         inputDialog.Prompt = Properties.Resources.InputProfilePrompt;
-        inputDialog.Input = GenerateUniqueProfileName(Path.GetFileNameWithoutExtension(openFileDialog.FileName));
+        inputDialog.Input = ProfilesMenuController.GenerateUniqueProfileName(Path.GetFileNameWithoutExtension(openFileDialog.FileName));
 
         if (inputDialog.ShowDialog(this) != DialogResult.OK) return;
 
         dataGridViewHostsEntries.CommitEdit(DataGridViewDataErrorContexts.Commit);
 
         HostsFile.Instance.Import(openFileDialog.FileName);
-        HostsFile.Instance.SaveAsProfile(inputDialog.Input);
-        AuditLogger.Instance.Log(AuditActionType.FileImported, AuditSource.MainForm, new AuditDetail { SourcePath = openFileDialog.FileName });
+        _auditLogger.Log(AuditActionType.FileImported, AuditSource.MainForm, new AuditDetail { SourcePath = openFileDialog.FileName });
 
-        var imported = HostsProfileList.Instance.FirstOrDefault(p =>
-            string.Equals(p.FileName, HostsProfile.NormalizeName(inputDialog.Input), StringComparison.OrdinalIgnoreCase));
-
-        // Imported content is identical to what was just saved, so the diff-before-switch
-        // dialog (if enabled) will skip itself and this activates silently — same as Clone.
-        if (imported != null)
-            ProfileSwitcher.Activate(imported, ProfileSwitcher.TriggerSource.TrayMenu);
-    }
-
-    /// <summary>
-    /// Suggests a profile name for newly imported content: the source file's own
-    /// name, unless that collides with an existing profile or a reserved name
-    /// (matching what already shows up as a peer entry in the Profiles menu) —
-    /// in which case " (2)", " (3)", etc. is appended until it's unique.
-    /// </summary>
-    private static string GenerateUniqueProfileName(string baseName)
-    {
-        if (string.IsNullOrWhiteSpace(baseName))
-            baseName = "profile";
-
-        // "default" isn't listed — it's now a real profile (Default.hosts), so
-        // existingNames below already catches it like any other taken name.
-        var reserved = new[] { "hosts", "disabled" };
-        var existingNames = HostsProfileList.Instance
-            .Select(p => Path.GetFileNameWithoutExtension(p.FileName))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        bool IsTaken(string name) =>
-            reserved.Contains(name, StringComparer.OrdinalIgnoreCase) || existingNames.Contains(name);
-
-        if (!IsTaken(baseName)) return baseName;
-
-        var counter = 2;
-        string candidate;
-        do
-        {
-            candidate = $"{baseName} ({counter})";
-            counter++;
-        } while (IsTaken(candidate));
-
-        return candidate;
+        _profilesMenu!.ActivateAsNewProfile(inputDialog.Input);
     }
 
     /// <summary>
@@ -558,53 +401,6 @@ internal partial class MainForm : Form
     {
         SaveSettings();
         Application.Exit();
-    }
-
-    /// <summary>
-    /// Default is a real, persisted profile (reserved file name) like any other —
-    /// always present, so it gets Raw Edit/Profile Settings/Activate Temporarily
-    /// for free via the exact same code paths as user-created profiles.
-    /// </summary>
-    private static HostsProfile GetDefaultProfile() =>
-        HostsProfileList.Instance.FirstOrDefault(p => p.IsDefault) ?? new HostsProfile("Default");
-
-    /// <summary>
-    /// "Default" in the Profiles menu — reached from the same submenu as
-    /// Activate/Reload for named profiles, so it behaves like an actual switch.
-    /// </summary>
-    private void OnRestoreToDefaultProfileClick()
-    {
-        dataGridViewHostsEntries.CommitEdit(DataGridViewDataErrorContexts.Commit);
-
-        if (!ProfileSwitcher.Activate(GetDefaultProfile(), ProfileSwitcher.TriggerSource.TrayMenu))
-            return; // file missing, or user cancelled at the diff dialog
-
-        AuditLogger.Instance.Log(AuditActionType.DefaultRestored, AuditSource.MainForm);
-    }
-
-    /// <summary>
-    /// "Hosts File Disabled" — unlike "Default", which always has content
-    /// (even if it's just the Windows default), this turns hosts resolution off
-    /// entirely: no profile is active, not even Default.
-    /// </summary>
-    private void OnDisableAllProfilesClick()
-    {
-        dataGridViewHostsEntries.CommitEdit(DataGridViewDataErrorContexts.Commit);
-
-        ProfileSwitcher.DisableAll();
-        AuditLogger.Instance.Log(AuditActionType.HostsFileDisabled, AuditSource.MainForm);
-    }
-
-    /// <summary>
-    /// The "Hosts File Disabled" checkbox in the File menu — checking it disables
-    /// all profiles, unchecking it falls back to Default.
-    /// </summary>
-    private void OnHostsFileDisabledClick(object sender, EventArgs e)
-    {
-        if (ProfileSwitcher.IsHostsDisabled)
-            OnRestoreToDefaultProfileClick();
-        else
-            OnDisableAllProfilesClick();
     }
 
     private void OnDiffBeforeSwitchCheckedChanged(object sender, EventArgs e)
@@ -684,36 +480,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnMoveDownClick(object sender, EventArgs e)
-    {
-        var entries = HostsFile.Instance.Entries;
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            var selectedEntries = dataGridViewHostsEntries.SelectedHostEntries.ToList();
-            var lastSelected = dataGridViewHostsEntries.LastSelectedHostEntry;
-
-            // The block moves down by one position relative to whatever currently
-            // sits right after it — NOT relative to one of its own members (using
-            // the selection's own last item as the target was always a no-op).
-            var lastIndex = lastSelected != null ? entries.IndexOf(lastSelected) : -1;
-            if (lastIndex >= 0 && lastIndex < entries.Count - 1)
-            {
-                entries.MoveAfter(selectedEntries, entries[lastIndex + 1]);
-                dataGridViewHostsEntries.SelectedHostEntries = selectedEntries;
-            }
-        }
-        else if (dataGridViewHostsEntries.CurrentHostEntry != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            var currentIndex = entries.IndexOf(currentEntry);
-            if (currentIndex >= 0 && currentIndex < entries.Count - 1)
-            {
-                entries.MoveAfter([currentEntry], entries[currentIndex + 1]);
-                dataGridViewHostsEntries.SelectedHostEntries = [currentEntry];
-            }
-        }
-    }
+    private void OnMoveDownClick(object sender, EventArgs e) => _gridCommands!.MoveDown(sender, e);
 
     /// <summary>
     /// Occurs when move up clicked.
@@ -724,36 +491,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnMoveUpClick(object sender, EventArgs e)
-    {
-        var entries = HostsFile.Instance.Entries;
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            var selectedEntries = dataGridViewHostsEntries.SelectedHostEntries.ToList();
-            var firstSelected = dataGridViewHostsEntries.FirstSelectedHostEntry;
-
-            // The block moves up by one position relative to whatever currently
-            // sits right before it — NOT relative to one of its own members (using
-            // the selection's own last item as the target was always a no-op).
-            var firstIndex = firstSelected != null ? entries.IndexOf(firstSelected) : -1;
-            if (firstIndex > 0)
-            {
-                entries.MoveBefore(selectedEntries, entries[firstIndex - 1]);
-                dataGridViewHostsEntries.SelectedHostEntries = selectedEntries;
-            }
-        }
-        else if (dataGridViewHostsEntries.CurrentHostEntry != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            var currentIndex = entries.IndexOf(currentEntry);
-            if (currentIndex > 0)
-            {
-                entries.MoveBefore([currentEntry], entries[currentIndex - 1]);
-                dataGridViewHostsEntries.SelectedHostEntries = [currentEntry];
-            }
-        }
-    }
+    private void OnMoveUpClick(object sender, EventArgs e) => _gridCommands!.MoveUp(sender, e);
 
     /// <summary>
     /// The on notify icon double click.
@@ -775,47 +513,7 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnPasteClick(object sender, EventArgs e)
-    {
-        // HACK: If editing cell forward cut/copy/paste command
-        // to editing control
-        if (dataGridViewHostsEntries.IsCurrentCellInEditMode)
-        {
-            var keys = menuPaste.ShortcutKeys;
-            menuPaste.ShortcutKeys = Keys.None;
-            menuContextPaste.ShortcutKeys = Keys.None;
-            SendKeys.SendWait("^(V)");
-            menuPaste.ShortcutKeys = keys;
-            menuContextPaste.ShortcutKeys = keys;
-            return;
-        }
-
-        dataGridViewHostsEntries.CancelEdit();
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0 &&
-            _clipboardEntries != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.Insert(currentEntry, _clipboardEntries);
-            }
-
-            _clipboardEntries = null;
-        }
-        else
-        {
-            foreach (
-                DataGridViewCell cell in
-                dataGridViewHostsEntries.SelectedCells)
-            {
-                if (cell.ValueType == typeof(string))
-                {
-                    cell.Value = Clipboard.GetText();
-                }
-            }
-        }
-    }
+    private void OnPasteClick(object sender, EventArgs e) => _gridCommands!.Paste(sender, e);
 
     /// <summary>
     /// Occurs when form's Visible property changed.
@@ -864,20 +562,28 @@ internal partial class MainForm : Form
         _diffGate = new DiffBeforeSwitchGate(this, Text);
         menuDiffBeforeSwitch.Checked = Properties.Settings.Default.DiffBeforeSwitchEnabled;
 
-        RestoreActiveProfile();
+        // Subscribes itself to HostsProfileList.Instance.ListChanged and
+        // ProfileSwitcher.ActiveProfileChanged, so it keeps the Profiles menu in
+        // sync on its own from here on — constructed before RestoreFromSettings()
+        // so that call's own ActiveProfileChanged also triggers an initial build.
+        _profilesMenu = new ProfilesMenuController(
+            this, dataGridViewHostsEntries, _auditLogger, menuBarProfiles, menuTrayProfiles,
+            () => _externalChangeWatcher?.NotifyActiveProfileFileWritten(),
+            OnActivateWithTimerClick);
 
-        // Build initial menus and tray icon
-        RebuildProfilesMenus();
+        ProfileSwitcher.RestoreFromSettings();
+
+        // Build initial menus and tray icon (RestoreFromSettings() above already
+        // triggers this when it finds a match, but not when the active profile is
+        // left undetermined — so build explicitly too, redundant but harmless)
+        _profilesMenu.Rebuild();
         UpdateNotifyIcon();
         UpdateGridEnabledState();
 
-        // Rebuild on list changes
-        HostsProfileList.Instance.ListChanged += (_, _) => RebuildProfilesMenus();
-        ProfileSwitcher.ActiveProfileChanged += RebuildProfilesMenus;
         ProfileSwitcher.ActiveProfileChanged += UpdateNotifyIcon;
         ProfileSwitcher.ActiveProfileChanged += UpdateGridEnabledState;
 
-        // Subscribed after RestoreActiveProfile() runs, so resuming the previous
+        // Subscribed after RestoreFromSettings() runs, so resuming the previous
         // session's active profile on launch doesn't itself pop a notification —
         // only real switches made while the app is running do.
         ProfileSwitcher.ActiveProfileChanged += NotifyProfileSwitched;
@@ -892,310 +598,6 @@ internal partial class MainForm : Form
                 ? $"Switched to profile \"{active.FileName}\""
                 : "Switched to Default";
         notifyIcon.ShowBalloonTip(3000, "Profiles", message, ToolTipIcon.Info);
-    }
-
-    /// <summary>
-    /// Restores tracking of which profile was active in a previous session.
-    /// Falls back to comparing file contents if the saved name no longer matches
-    /// (e.g. profile renamed/deleted, or hosts file edited outside this app).
-    /// </summary>
-    private void RestoreActiveProfile()
-    {
-        if (!HostsFile.IsEnabled)
-        {
-            ProfileSwitcher.RestoreDisabled();
-            return;
-        }
-
-        var savedName = Properties.Settings.Default.ActiveProfileName;
-
-        var match = !string.IsNullOrEmpty(savedName)
-            ? HostsProfileList.Instance.FirstOrDefault(a => a.FileName == savedName)
-            : null;
-
-        match ??= DetectActiveProfileByContent();
-
-        if (match != null)
-        {
-            ProfileSwitcher.RestoreActive(match);
-        }
-    }
-
-    /// <summary>
-    /// Re-syncs which profile is tracked as "active" after a rollback-timer revert,
-    /// since the revert writes the hosts file directly (bypassing ProfileSwitcher) —
-    /// without this, the Profiles menu checkmark and status bar would keep pointing
-    /// at the timed profile that was just reverted away from.
-    /// </summary>
-    private static void SyncActiveProfileAfterRevert()
-    {
-        var match = DetectActiveProfileByContent();
-        if (match != null)
-            ProfileSwitcher.RestoreActive(match);
-        else
-            ProfileSwitcher.ClearActive();
-    }
-
-    private static HostsProfile? DetectActiveProfileByContent()
-    {
-        try
-        {
-            var hostsLines = File.ReadAllLines(HostsFile.DefaultHostFilePath);
-
-            foreach (var profile in HostsProfileList.Instance)
-            {
-                if (File.Exists(profile.FilePath) &&
-                    File.ReadAllLines(profile.FilePath).SequenceEqual(hostsLines))
-                {
-                    return profile;
-                }
-            }
-        }
-        catch (IOException)
-        {
-            // Hosts file unreadable — leave active profile undetermined
-        }
-
-        return null;
-    }
-
-    private void RebuildProfilesMenus()
-    {
-        if (InvokeRequired)
-        {
-            Invoke(RebuildProfilesMenus);
-            return;
-        }
-
-        PopulateProfilesMenu(menuTrayProfiles);
-        PopulateProfilesMenu(menuBarProfiles);
-    }
-
-    private void PopulateProfilesMenu(ToolStripMenuItem parent)
-    {
-        parent.DropDownItems.Clear();
-
-        var menuSaveCurrent = new ToolStripMenuItem("Save Current as Profile…") { Enabled = !ProfileSwitcher.IsHostsDisabled };
-        menuSaveCurrent.Click += OnSaveCurrentAsProfileClick;
-        parent.DropDownItems.Add(menuSaveCurrent);
-
-        var menuNewEmpty = new ToolStripMenuItem("New Empty Profile…") { Enabled = !ProfileSwitcher.IsHostsDisabled };
-        menuNewEmpty.Click += OnNewEmptyProfileClick;
-        parent.DropDownItems.Add(menuNewEmpty);
-
-        parent.DropDownItems.Add(new ToolStripSeparator());
-
-        var defaultProfile = GetDefaultProfile();
-        bool isDefaultActive = ProfileSwitcher.ActiveProfile == defaultProfile && !ProfileSwitcher.IsHostsDisabled;
-        var defaultFontStyle = isDefaultActive ? (FontStyle.Italic | FontStyle.Bold) : FontStyle.Italic;
-        var menuDefault = BuildProfileMenuItem(parent, defaultProfile, "Default", new Font(parent.Font, defaultFontStyle),
-            isDefaultActive, includeDelete: false);
-        parent.DropDownItems.Add(menuDefault);
-
-        parent.DropDownItems.Add(new ToolStripSeparator());
-
-        // ── User-created profiles ──────────────────────────────────────────
-        var profiles = HostsProfileList.Instance
-            .Where(a => !a.IsDefault)
-            .OrderBy(a => a.Metadata?.SortOrder ?? 0)
-            .ThenBy(a => a.FileName)
-            .ToList();
-
-        foreach (var profile in profiles)
-        {
-            bool isActive = ProfileSwitcher.ActiveProfile == profile && !ProfileSwitcher.IsHostsDisabled;
-            var font = isActive ? new Font(parent.Font, FontStyle.Bold) : parent.Font;
-            var profileItem = BuildProfileMenuItem(parent, profile, profile.FileName, font, isActive, includeDelete: true);
-            parent.DropDownItems.Add(profileItem);
-        }
-
-        parent.DropDownItems.Add(new ToolStripSeparator());
-
-        // A toggle, not a peer "switch to this" entry like Default/profiles —
-        // checking it disables hosts resolution entirely, so it sits below the list
-        // rather than next to Default, where it could be mistaken for one more profile.
-        var menuHostsDisabled = new ToolStripMenuItem("Hosts File Disabled")
-        {
-            Checked = ProfileSwitcher.IsHostsDisabled,
-            CheckOnClick = true
-        };
-        menuHostsDisabled.Click += (s, e) => OnHostsFileDisabledClick(s!, e);
-        parent.DropDownItems.Add(menuHostsDisabled);
-    }
-
-    /// <summary>
-    /// Builds one top-level Profiles-menu entry (Default or a named profile) with its
-    /// Activate/Clone/Raw Edit/Settings[/Delete] submenu. Shared so Default gets exactly
-    /// the same capabilities as user-created profiles, minus the ability to delete it.
-    /// </summary>
-    private ToolStripMenuItem BuildProfileMenuItem(
-        ToolStripMenuItem parent, HostsProfile profile, string baseLabel, Font font, bool isActive, bool includeDelete)
-    {
-        var meta = profile.Metadata;
-        var label = baseLabel;
-        if (meta?.HasHotkey == true)
-            label += $"  ({FormatHotkeyChord(meta.HotkeyModifiers, meta.HotkeyKey)})";
-
-        var item = new ToolStripMenuItem(label)
-        {
-            Checked = isActive,
-            Enabled = !ProfileSwitcher.IsHostsDisabled,
-            Font = font
-        };
-
-        bool exists = File.Exists(profile.FilePath);
-        var captured = profile;
-
-        // Already active: re-activating just discards unsaved grid edits and
-        // reloads from this profile's file — relabel so that's clear, rather
-        // than reading as a redundant "activate the thing that's already active".
-        var menuActivate = new ToolStripMenuItem(isActive ? "Reload" : "Activate") { Enabled = exists, Font = parent.Font };
-        menuActivate.Click += (_, _) =>
-            ProfileSwitcher.Activate(captured, ProfileSwitcher.TriggerSource.TrayMenu);
-
-        var menuClone = new ToolStripMenuItem("Clone…") { Enabled = exists, Font = parent.Font };
-        menuClone.Click += (_, _) => OnCloneProfileClick(captured);
-
-        var menuRawEditProfile = new ToolStripMenuItem("Raw Edit…") { Enabled = exists, Font = parent.Font };
-        menuRawEditProfile.Click += (_, _) => OnProfileRawEditClick(captured);
-
-        var menuSettings = new ToolStripMenuItem("Profile Settings…") { Font = parent.Font };
-        menuSettings.Click += (_, _) =>
-        {
-            using var dlg = new ProfileSettingsForm(captured);
-            dlg.ShowDialog(this);
-            RebuildProfilesMenus(); // color/sort-order/description changes don't fire ListChanged
-        };
-
-        // Doesn't make sense for the profile that's already active — there's
-        // nothing to "temporarily switch to", you're already on it.
-        var menuActivateTimer = new ToolStripMenuItem("Activate Temporarily…")
-        {
-            Enabled = exists,
-            Visible = !isActive,
-            Font = parent.Font
-        };
-        menuActivateTimer.Click += (_, _) => OnActivateWithTimerClick(captured);
-
-        item.DropDownItems.Add(menuActivate);
-        item.DropDownItems.Add(menuActivateTimer);
-        item.DropDownItems.Add(new ToolStripSeparator());
-        item.DropDownItems.Add(menuClone);
-        item.DropDownItems.Add(menuRawEditProfile);
-        item.DropDownItems.Add(menuSettings);
-
-        if (includeDelete)
-        {
-            var menuDelete = new ToolStripMenuItem("Delete") { Font = parent.Font };
-            menuDelete.Click += (_, _) => OnDeleteProfileClick(captured);
-            item.DropDownItems.Add(new ToolStripSeparator());
-            item.DropDownItems.Add(menuDelete);
-        }
-
-        if (!exists)
-            item.ForeColor = SystemColors.GrayText;
-
-        var colorHex = meta?.Color;
-        if (!string.IsNullOrEmpty(colorHex))
-        {
-            try
-            {
-                item.Image = CreateColorSwatch(ColorTranslator.FromHtml(colorHex), 12, 12);
-                item.ImageScaling = ToolStripItemImageScaling.None;
-            }
-            catch { }
-        }
-
-        return item;
-    }
-
-    private void OnSaveCurrentAsProfileClick(object? sender, EventArgs e)
-    {
-        using var inputDialog = new InputForm();
-        inputDialog.Text = Text;
-        inputDialog.Prompt = Properties.Resources.InputProfilePrompt;
-
-        if (inputDialog.ShowDialog(this) == DialogResult.OK)
-        {
-            // Flush any in-progress grid edit so the saved profile matches what's on screen
-            dataGridViewHostsEntries.CommitEdit(DataGridViewDataErrorContexts.Commit);
-
-            HostsFile.Instance.SaveAsProfile(inputDialog.Input);
-        }
-    }
-
-    private void OnNewEmptyProfileClick(object? sender, EventArgs e)
-    {
-        using var inputDialog = new InputForm();
-        inputDialog.Text = Text;
-        inputDialog.Prompt = Properties.Resources.InputProfilePrompt;
-
-        if (inputDialog.ShowDialog(this) == DialogResult.OK)
-        {
-            var profile = new HostsProfile(inputDialog.Input);
-
-            Directory.CreateDirectory(HostsProfileList.ProfileDirectory);
-
-            // Write default Windows hosts content
-            File.WriteAllText(profile.FilePath, Properties.Resources.hosts);
-
-            HostsProfileList.Instance.Add(profile);
-        }
-    }
-
-    private void OnCloneProfileClick(HostsProfile source)
-    {
-        using var inputDialog = new InputForm();
-        inputDialog.Text = Text;
-        inputDialog.Prompt = Properties.Resources.InputProfilePrompt;
-
-        if (inputDialog.ShowDialog(this) == DialogResult.OK)
-        {
-            // If cloning the profile currently loaded on screen, sync its saved file
-            // with the live (possibly edited, uncommitted) grid contents first
-            if (source == ProfileSwitcher.ActiveProfile)
-            {
-                dataGridViewHostsEntries.CommitEdit(DataGridViewDataErrorContexts.Commit);
-                HostsFile.Instance.SaveAs(source.FilePath);
-                _externalChangeWatcher?.NotifyActiveProfileFileWritten();
-            }
-
-            var destProfile = new HostsProfile(inputDialog.Input);
-            File.Copy(source.FilePath, destProfile.FilePath);
-            HostsProfileList.Instance.Add(destProfile);
-
-            // Clone is identical to the source at this point, so the diff-before-switch
-            // dialog (if enabled) will skip itself and this activates silently
-            ProfileSwitcher.Activate(destProfile, ProfileSwitcher.TriggerSource.TrayMenu);
-        }
-    }
-
-    private void OnDeleteProfileClick(HostsProfile profile)
-    {
-        bool isActive = ProfileSwitcher.ActiveProfile == profile;
-
-        var prompt = isActive
-            ? $"Delete profile '{profile.FileName}'?\n\nIt's currently active — the hosts file will be reset to the Windows default."
-            : $"Delete profile '{profile.FileName}'?";
-
-        var result = MessageBox.Show(
-            this,
-            prompt,
-            Text,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button2);
-
-        if (result == DialogResult.Yes)
-        {
-            // Deleting the file out from under the active profile would otherwise leave
-            // the grid/live hosts file showing an orphaned copy of content that no
-            // longer corresponds to anything — reset to a well-defined state instead.
-            if (isActive)
-                OnRestoreToDefaultProfileClick();
-
-            HostsProfileList.Instance.Delete(profile);
-        }
     }
 
     private void UpdateNotifyIcon()
@@ -1238,15 +640,6 @@ internal partial class MainForm : Form
         menuRemoveSort.Enabled = enabled;
     }
 
-    private static string FormatHotkeyChord(int modifiers, int key)
-    {
-        var parts = new List<string>();
-        if ((modifiers & 2) != 0) parts.Add("Ctrl");
-        if ((modifiers & 4) != 0) parts.Add("Shift");
-        if ((modifiers & 1) != 0) parts.Add("Alt");
-        parts.Add(((Keys)key).ToString());
-        return string.Join("+", parts);
-    }
 
     /// <summary>
     /// Called when insert above clicked.
@@ -1254,22 +647,7 @@ internal partial class MainForm : Form
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/>
     /// instance containing the event data.</param>
-    private void OnInsertAboveClick(object sender, EventArgs e)
-    {
-        if (dataGridViewHostsEntries.CurrentRow?.DataBoundItem != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.InsertBefore(currentEntry);
-            }
-        }
-        else
-        {
-            dataGridViewHostsEntries.CancelEdit();
-            HostsFile.Instance.Entries.Add();
-        }
-    }
+    private void OnInsertAboveClick(object sender, EventArgs e) => _gridCommands!.InsertAbove(sender, e);
 
     /// <summary>
     /// Called when insert below clicked.
@@ -1277,22 +655,7 @@ internal partial class MainForm : Form
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/> instance 
     /// containing the event data.</param>
-    private void OnInsertBelowClick(object sender, EventArgs e)
-    {
-        if (dataGridViewHostsEntries.CurrentRow?.DataBoundItem != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.InsertAfter(currentEntry);
-            }
-        }
-        else
-        {
-            dataGridViewHostsEntries.CancelEdit();
-            HostsFile.Instance.Entries.Add();
-        }
-    }
+    private void OnInsertBelowClick(object sender, EventArgs e) => _gridCommands!.InsertBelow(sender, e);
 
     /// <summary>
     /// Called when refresh clicked.
@@ -1440,54 +803,14 @@ internal partial class MainForm : Form
     /// </summary>
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/> instance containing the event data.</param>
-    private void OnCheckClick(object sender, EventArgs e)
-    {
-        dataGridViewHostsEntries.CancelEdit();
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            HostsFile.Instance.Entries.SetEnabled(
-                 dataGridViewHostsEntries.SelectedHostEntries,
-                 isEnabled: true);
-        }
-        else if (dataGridViewHostsEntries.CurrentHostEntry != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.SetEnabled(
-                    [currentEntry],
-                    isEnabled: true);
-            }
-        }
-    }
+    private void OnCheckClick(object sender, EventArgs e) => _gridCommands!.Check(sender, e);
 
     /// <summary>
     /// Called when uncheck clicked.
     /// </summary>
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/> instance containing the event data.</param>
-    private void OnUncheckClick(object sender, EventArgs e)
-    {
-        dataGridViewHostsEntries.CancelEdit();
-
-        if (dataGridViewHostsEntries.SelectedRows.Count > 0)
-        {
-            HostsFile.Instance.Entries.SetEnabled(
-                 dataGridViewHostsEntries.SelectedHostEntries,
-                 isEnabled: false);
-        }
-        else if (dataGridViewHostsEntries.CurrentHostEntry != null)
-        {
-            var currentEntry = dataGridViewHostsEntries.CurrentHostEntry;
-            if (currentEntry != null)
-            {
-                HostsFile.Instance.Entries.SetEnabled(
-                    [currentEntry],
-                    isEnabled: false);
-            }
-        }
-    }
+    private void OnUncheckClick(object sender, EventArgs e) => _gridCommands!.Uncheck(sender, e);
 
     /// <summary>
     /// Called when about clicked.
@@ -1514,44 +837,4 @@ internal partial class MainForm : Form
         TakeBaselineSnapshot();
     }
 
-    private void OnProfileRawEditClick(HostsProfile profile)
-    {
-        if (!File.Exists(profile.FilePath))
-        {
-            MessageBox.Show(this, $"Profile file not found:\n{profile.FilePath}",
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
-        }
-
-        HostsEntryList entries;
-        try
-        {
-            entries = new HostsEntryList(File.ReadAllLines(profile.FilePath), filterDefault: false);
-        }
-        catch (IOException ex)
-        {
-            MessageBox.Show(this, $"Could not read profile:\n{ex.Message}",
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
-        }
-
-        var rawText = RawEditForm.FormatAligned(entries);
-
-        using var form = new RawEditForm(rawText) { Icon = Icon, Text = $"Raw Edit — {profile.FileName}" };
-        if (form.ShowDialog(this) != DialogResult.OK) return;
-
-        // Writes only the profile's own file — never the live hosts file or grid.
-        // If this happens to be the active profile, the existing external-change
-        // watcher will naturally offer to reload it into the grid on next focus.
-        File.WriteAllLines(profile.FilePath, form.GetLines());
-    }
-
-    internal static Bitmap CreateColorSwatch(Color c, int w, int h)
-    {
-        var bmp = new Bitmap(w, h);
-        using var g = Graphics.FromImage(bmp);
-        g.FillRectangle(new SolidBrush(c), 0, 0, w, h);
-        g.DrawRectangle(new Pen(Color.FromArgb(100, 0, 0, 0)), 0, 0, w - 1, h - 1);
-        return bmp;
-    }
 }

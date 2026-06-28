@@ -8,7 +8,7 @@ internal partial class MainForm
     // Changes buffered between saves: (before, after) pairs.
     private readonly List<(AuditEntrySnapshot Before, AuditEntrySnapshot After)> _pendingModifications = [];
 
-    private static AuditEntrySnapshot ToSnapshot(HostsEntry e) => new()
+    internal static AuditEntrySnapshot ToSnapshot(HostsEntry e) => new()
     {
         Ip = e.IpAddress,
         Hostnames = e.HostNames,
@@ -105,7 +105,7 @@ internal partial class MainForm
     {
         foreach (var (before, after) in _pendingModifications)
         {
-            AuditLogger.Instance.Log(AuditActionType.EntryModified, source, new AuditDetail { Before = before, After = after });
+            _auditLogger.Log(AuditActionType.EntryModified, source, new AuditDetail { Before = before, After = after });
         }
         _pendingModifications.Clear();
     }
@@ -147,18 +147,18 @@ internal partial class MainForm
 
     private void OnViewAuditLogClick(object? sender, EventArgs e)
     {
-        using var form = new AuditLogForm();
+        using var form = new AuditLogForm(_auditLogger);
         form.ShowDialog(this);
     }
 
     private void SetupAuditLoggerNotifications()
     {
-        AuditLogger.Instance.IntegrityFailed += OnAuditIntegrityFailed;
-        AuditLogger.Instance.LogError += OnAuditLogError;
+        _auditLogger.IntegrityFailed += OnAuditIntegrityFailed;
+        _auditLogger.LogError += OnAuditLogError;
         FormClosed += (_, _) =>
         {
-            AuditLogger.Instance.IntegrityFailed -= OnAuditIntegrityFailed;
-            AuditLogger.Instance.LogError -= OnAuditLogError;
+            _auditLogger.IntegrityFailed -= OnAuditIntegrityFailed;
+            _auditLogger.LogError -= OnAuditLogError;
         };
     }
 

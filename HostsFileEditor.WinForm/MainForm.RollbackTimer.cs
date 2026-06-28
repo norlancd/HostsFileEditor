@@ -10,9 +10,10 @@ internal partial class MainForm
 
     private void SetupRollbackTimer()
     {
-        var svc = RollbackTimerService.Instance;
+        var svc = _rollbackTimerService;
 
         svc.SetUiContext(SynchronizationContext.Current);
+        svc.SetAuditLogger(_auditLogger);
         svc.TimerExpired += OnRollbackTimerExpired;
         svc.Notification += OnRollbackNotification;
         svc.StateChanged += OnRollbackStateChanged;
@@ -123,7 +124,7 @@ internal partial class MainForm
         {
             try
             {
-                _statusProfileColorBitmap = CreateColorSwatch(ColorTranslator.FromHtml(colorHex), 10, 10);
+                _statusProfileColorBitmap = ProfilesMenuController.CreateColorSwatch(ColorTranslator.FromHtml(colorHex), 10, 10);
                 _statusProfileLabel.Image = _statusProfileColorBitmap;
                 _statusProfileLabel.ImageScaling = ToolStripItemImageScaling.None;
             }
@@ -141,7 +142,7 @@ internal partial class MainForm
     {
         if (_statusTimerLabel == null) return;
 
-        var timer = RollbackTimerService.Instance.ActiveTimer;
+        var timer = _rollbackTimerService.ActiveTimer;
 
         if (timer?.Status is not (RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed))
         {
@@ -177,7 +178,7 @@ internal partial class MainForm
 
     private void UpdateTrayTooltip()
     {
-        var timer = RollbackTimerService.Instance.ActiveTimer;
+        var timer = _rollbackTimerService.ActiveTimer;
 
         if (timer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed)
         {
@@ -205,7 +206,7 @@ internal partial class MainForm
 
     private void OnTimerLabelClick(object? sender, EventArgs e)
     {
-        var svc = RollbackTimerService.Instance;
+        var svc = _rollbackTimerService;
         if (svc.ActiveTimer?.Status is not (RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed))
             return;
 
@@ -248,7 +249,7 @@ internal partial class MainForm
     {
         if (InvokeRequired) { Invoke(() => OnRollbackStateChanged(sender, e)); return; }
 
-        var isActive = RollbackTimerService.Instance.ActiveTimer?.Status
+        var isActive = _rollbackTimerService.ActiveTimer?.Status
             is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed;
 
         if (isActive)
@@ -263,7 +264,7 @@ internal partial class MainForm
             UpdateTrayTooltip();
         }
 
-        RebuildProfilesMenus();
+        _profilesMenu?.Rebuild();
     }
 
     // ── Notifications + expiry ───────────────────────────────────────────────
@@ -288,14 +289,14 @@ internal partial class MainForm
         switch (form.ChosenResult)
         {
             case RollbackExpiryForm.ExpiryResult.Revert:
-                RollbackTimerService.Instance.ExecuteRevert(autoReverted: form.WasAutoReverted);
-                SyncActiveProfileAfterRevert();
+                _rollbackTimerService.ExecuteRevert(autoReverted: form.WasAutoReverted);
+                ProfileSwitcher.SyncActiveAfterExternalWrite();
                 break;
             case RollbackExpiryForm.ExpiryResult.Snooze:
-                RollbackTimerService.Instance.Snooze(TimeSpan.FromMinutes(30));
+                _rollbackTimerService.Snooze(TimeSpan.FromMinutes(30));
                 break;
             case RollbackExpiryForm.ExpiryResult.Keep:
-                RollbackTimerService.Instance.CancelTimer();
+                _rollbackTimerService.CancelTimer();
                 break;
         }
 
@@ -306,7 +307,7 @@ internal partial class MainForm
 
     private void OnActivateWithTimerClick(HostsProfile profile)
     {
-        var svc = RollbackTimerService.Instance;
+        var svc = _rollbackTimerService;
 
         if (svc.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed)
         {

@@ -1,6 +1,6 @@
 namespace HostsFileEditor.Utilities;
 
-public class UndoManager
+public class UndoManager : IUndoManager
 {
     private const int MaximumHistorySize = 1000;
 

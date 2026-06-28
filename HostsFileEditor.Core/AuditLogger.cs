@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace HostsFileEditor;
 
-public class AuditLogger
+public class AuditLogger : IAuditLogger
 {
     private static readonly Lazy<AuditLogger> _instance = new(() => new AuditLogger());
     public static AuditLogger Instance => _instance.Value;

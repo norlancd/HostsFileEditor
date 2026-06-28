@@ -14,10 +14,12 @@ internal class AuditLogForm : Form
     private readonly StatusStrip _statusStrip = new();
     private readonly ToolStripStatusLabel _statusLabel = new();
 
+    private readonly IAuditLogger _auditLogger;
     private List<AuditEntry> _allEntries = [];
 
-    public AuditLogForm()
+    public AuditLogForm(IAuditLogger auditLogger)
     {
+        _auditLogger = auditLogger;
         Text = "Audit Log";
         Icon = Properties.Resources.HostsFileEditor;
         Size = new Size(900, 600);
@@ -91,13 +93,13 @@ internal class AuditLogForm : Form
 
     private void LoadEntries()
     {
-        _allEntries = AuditLogger.Instance.ReadEntries()
+        _allEntries = _auditLogger.ReadEntries()
             .Reverse()
             .ToList();
 
         ApplyFilter();
 
-        var ok = AuditLogger.Instance.VerifyChain();
+        var ok = _auditLogger.VerifyChain();
         _integrityLabel.Text = ok
             ? "  ✓ Chain integrity verified"
             : "  ⚠ Integrity check failed — log may have been tampered with";
