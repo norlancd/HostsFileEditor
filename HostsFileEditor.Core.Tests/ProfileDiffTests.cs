@@ -4,7 +4,7 @@ namespace HostsFileEditor.Core.Tests;
 public class ProfileDiffTests
 {
     private static HostsEntryList Lines(params string[] lines) =>
-        new(lines, filterDefault: false);
+        new(new UndoManager(), lines, filterDefault: false);
 
     [TestMethod]
     public void Compute_DetectsModifiedIp()

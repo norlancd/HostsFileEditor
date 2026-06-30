@@ -11,6 +11,7 @@ internal sealed class ProfileExternalChangeWatcher : IDisposable
 {
     private readonly Form _owner;
     private readonly Action _onReloaded;
+    private readonly IProfileSwitcher _profileSwitcher;
 
     // Last write time of the active profile's file as far as THIS app knows —
     // updated whenever we activate a profile or write to it ourselves (Save sync,
@@ -25,12 +26,13 @@ internal sealed class ProfileExternalChangeWatcher : IDisposable
     /// Called after the user accepts reloading from disk, so the caller can
     /// re-baseline anything it tracks itself (e.g. the audit change-tracker).
     /// </param>
-    public ProfileExternalChangeWatcher(Form owner, Action onReloaded)
+    public ProfileExternalChangeWatcher(Form owner, Action onReloaded, IProfileSwitcher profileSwitcher)
     {
         _owner = owner;
         _onReloaded = onReloaded;
+        _profileSwitcher = profileSwitcher;
 
-        ProfileSwitcher.ActiveProfileChanged += OnActiveProfileChanged;
+        _profileSwitcher.ActiveProfileChanged += OnActiveProfileChanged;
         _owner.Activated += OnOwnerActivated;
 
         OnActiveProfileChanged();
@@ -38,7 +40,7 @@ internal sealed class ProfileExternalChangeWatcher : IDisposable
 
     public void Dispose()
     {
-        ProfileSwitcher.ActiveProfileChanged -= OnActiveProfileChanged;
+        _profileSwitcher.ActiveProfileChanged -= OnActiveProfileChanged;
         _owner.Activated -= OnOwnerActivated;
     }
 
@@ -53,9 +55,9 @@ internal sealed class ProfileExternalChangeWatcher : IDisposable
     private void OnActiveProfileChanged() =>
         _activeProfileLastKnownWriteUtc = GetActiveProfileWriteTimeUtc();
 
-    private static DateTime? GetActiveProfileWriteTimeUtc()
+    private DateTime? GetActiveProfileWriteTimeUtc()
     {
-        var active = ProfileSwitcher.ActiveProfile;
+        var active = _profileSwitcher.ActiveProfile;
         if (active == null || !File.Exists(active.FilePath)) return null;
 
         try { return File.GetLastWriteTimeUtc(active.FilePath); }
@@ -102,7 +104,7 @@ internal sealed class ProfileExternalChangeWatcher : IDisposable
 
     private void CheckActiveProfileExternalChange()
     {
-        var active = ProfileSwitcher.ActiveProfile;
+        var active = _profileSwitcher.ActiveProfile;
         if (active == null || !File.Exists(active.FilePath)) return;
 
         DateTime currentWriteUtc;

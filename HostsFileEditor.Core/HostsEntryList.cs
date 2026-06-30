@@ -12,16 +12,21 @@ public class HostsEntryList : BindingList<HostsEntry>
         [Environment.NewLine],
         StringSplitOptions.None);
 
+    private readonly IUndoManager _undoManager;
+
+    public IUndoManager UndoManager => _undoManager;
+
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "BindingList only used for basic add/remove/change notifications; PropertyDescriptor reflective paths not used.")]
-    public HostsEntryList(IEnumerable<string> entryLines, bool filterDefault)
-        : this()
+    public HostsEntryList(IUndoManager undoManager, IEnumerable<string> entryLines, bool filterDefault)
+        : this(undoManager)
     {
         AddLines(entryLines, filterDefault);
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "BindingList only used for basic add/remove/change notifications; PropertyDescriptor reflective paths not used.")]
-    public HostsEntryList()
+    public HostsEntryList(IUndoManager undoManager)
     {
+        _undoManager = undoManager;
         AllowEdit = true;
         AllowNew = true;
         AllowRemove = true;
@@ -34,7 +39,7 @@ public class HostsEntryList : BindingList<HostsEntry>
     {
         ArgumentNullException.ThrowIfNull(lines);
 
-        UndoManager.Instance.SuspendUndoRedo(() =>
+        _undoManager.SuspendUndoRedo(() =>
         {
             var index = 0;
             foreach (var line in lines)
@@ -45,7 +50,7 @@ public class HostsEntryList : BindingList<HostsEntry>
 
                 if (!removeDefault || !isDefaultLine)
                 {
-                    Add(new HostsEntry(line));
+                    Add(new HostsEntry(_undoManager, line));
                 }
             }
         });
@@ -80,7 +85,7 @@ public class HostsEntryList : BindingList<HostsEntry>
             var insertIndex = beforeIndex - removedBefore;
             if (insertIndex < 0) insertIndex = 0;
 
-            UndoManager.Instance.BatchActions(() =>
+            _undoManager.BatchActions(() =>
             {
                 // Remove using simple removal (one-by-one) to minimize re-ordering side effects
                 foreach (var e in moving)
@@ -125,7 +130,7 @@ public class HostsEntryList : BindingList<HostsEntry>
             var updatedAfterIndex = afterIndex - removedBefore; // index after removals
             var insertIndex = updatedAfterIndex + 1; // after the target
 
-            UndoManager.Instance.BatchActions(() =>
+            _undoManager.BatchActions(() =>
             {
                 foreach (var e in moving)
                 {
@@ -148,7 +153,7 @@ public class HostsEntryList : BindingList<HostsEntry>
         ArgumentNullException.ThrowIfNull(entry);
 
         var insertIndex = IndexOf(entry);
-        Insert(insertIndex, newEntry ?? new HostsEntry());
+        Insert(insertIndex, newEntry ?? new HostsEntry(_undoManager));
     }
 
     public void InsertAfter(HostsEntry entry, HostsEntry? newEntry = null)
@@ -156,7 +161,7 @@ public class HostsEntryList : BindingList<HostsEntry>
         ArgumentNullException.ThrowIfNull(entry);
 
         var insertIndex = IndexOf(entry) + 1;
-        Insert(insertIndex, newEntry ?? new HostsEntry());
+        Insert(insertIndex, newEntry ?? new HostsEntry(_undoManager));
     }
 
     public void Insert(HostsEntry entry, IEnumerable<HostsEntry> entries)
@@ -166,7 +171,7 @@ public class HostsEntryList : BindingList<HostsEntry>
 
         var insertIndex = IndexOf(entry);
 
-        UndoManager.Instance.BatchActions(() =>
+        _undoManager.BatchActions(() =>
         {
             foreach (var newEntry in entries.ToList())
             {
@@ -181,7 +186,7 @@ public class HostsEntryList : BindingList<HostsEntry>
 
         this.BatchUpdate(() =>
         {
-            UndoManager.Instance.BatchActions(() =>
+            _undoManager.BatchActions(() =>
             {
                 foreach (var entry in entries.ToList())
                 {
@@ -191,7 +196,7 @@ public class HostsEntryList : BindingList<HostsEntry>
         });
     }
 
-    public void Add() => Add(new HostsEntry());
+    public void Add() => Add(new HostsEntry(_undoManager));
 
     public void SetEnabled(IEnumerable<HostsEntry> entries, bool isEnabled)
     {
@@ -199,7 +204,7 @@ public class HostsEntryList : BindingList<HostsEntry>
 
         this.BatchUpdate(() =>
         {
-            UndoManager.Instance.BatchActions(() =>
+            _undoManager.BatchActions(() =>
             {
                 foreach (var entry in entries)
                 {
@@ -209,11 +214,11 @@ public class HostsEntryList : BindingList<HostsEntry>
         });
     }
 
-    protected override object AddNewCore() => new HostsEntry(string.Empty);
+    protected override object AddNewCore() => new HostsEntry(_undoManager, string.Empty);
 
     protected override void InsertItem(int index, HostsEntry item)
     {
-        UndoManager.Instance.AddActions(
+        _undoManager.AddActions(
             undoAction: () => Remove(item),
             redoAction: () => Insert(index, item));
 
@@ -224,7 +229,7 @@ public class HostsEntryList : BindingList<HostsEntry>
     {
         var item = this[index];
 
-        UndoManager.Instance.AddActions(
+        _undoManager.AddActions(
             undoAction: () => Insert(index, item),
             redoAction: () => Remove(item));
 

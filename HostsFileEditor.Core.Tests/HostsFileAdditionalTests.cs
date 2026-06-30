@@ -28,15 +28,15 @@ public class HostsFileAdditionalTests
     }
 
     private HostsFile Create() => (HostsFile)typeof(HostsFile)
-        .GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string)}, null)!
-        .Invoke(new object[]{_tempFile});
+        .GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string), typeof(IUndoManager), typeof(IHostsProfileList)}, null)!
+        .Invoke(new object[]{_tempFile, new UndoManager(), HostsProfileList.Instance});
 
     [TestMethod]
     public void EnabledCountAndLineCount_UpdateOnListChange()
     {
         var hf = Create();
         var initialEnabled = hf.EnabledCount;
-        hf.Entries.Add(new HostsEntry("127.0.0.2 testhost"));
+        hf.Entries.Add(new HostsEntry(hf.Entries.UndoManager, "127.0.0.2 testhost"));
         hf.EnabledCount.ShouldBe(initialEnabled + 1);
         hf.LineCount.ShouldBe(hf.Entries.Count);
     }

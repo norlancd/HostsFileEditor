@@ -10,10 +10,13 @@ internal sealed class ProfileSettingsForm : Form
     };
 
     private readonly HostsProfile _profile;
+    private readonly IHotkeyRegistry _hotkeyRegistry;
     private HostsProfileMetadata _metadata;
 
     private TextBox _txtDescription = null!;
     private TextBox _txtHotkey = null!;
+    private TextBox _txtConfigSource = null!;
+    private TextBox _txtConfigDestination = null!;
     private NumericUpDown _nudSortOrder = null!;
     private Button _btnColorPicker = null!;
     private Panel _pnlColor = null!;
@@ -24,9 +27,10 @@ internal sealed class ProfileSettingsForm : Form
     private int _hotkeyKey;
     private string _color = string.Empty;
 
-    public ProfileSettingsForm(HostsProfile profile)
+    public ProfileSettingsForm(HostsProfile profile, IHotkeyRegistry hotkeyRegistry)
     {
         _profile = profile;
+        _hotkeyRegistry = hotkeyRegistry;
         _metadata = profile.Metadata ?? new HostsProfileMetadata { Name = profile.FileName };
         _hotkeyModifiers = _metadata.HotkeyModifiers;
         _hotkeyKey = _metadata.HotkeyKey;
@@ -44,14 +48,14 @@ internal sealed class ProfileSettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(360, 250);
+        ClientSize = new Size(440, 320);
         Padding = new Padding(12);
 
         var table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 6,
+            RowCount = 8,
             Padding = new Padding(4),
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
@@ -83,9 +87,18 @@ internal sealed class ProfileSettingsForm : Form
         _txtHotkey.GotFocus += (_, _) => _txtHotkey.SelectAll();
         AddRow(3, "Hotkey:", _txtHotkey);
 
+        // Optional — copies a config file (VPN/SSH/kubeconfig, etc.) needed to talk to this
+        // profile's servers into place automatically when it activates. Leave either blank
+        // ("None") to do nothing, which is what most profiles will want.
+        _txtConfigSource = new TextBox { Dock = DockStyle.Fill };
+        AddRow(4, "Config Source File:", BuildPathRow(_txtConfigSource, forSaveDestination: false));
+
+        _txtConfigDestination = new TextBox { Dock = DockStyle.Fill };
+        AddRow(5, "Overwrite This File:", BuildPathRow(_txtConfigDestination, forSaveDestination: true));
+
         _lblError = new Label { ForeColor = Color.Red, AutoSize = true, MaximumSize = new Size(340, 0) };
         table.SetColumnSpan(_lblError, 2);
-        table.Controls.Add(_lblError, 0, 4);
+        table.Controls.Add(_lblError, 0, 6);
 
         var buttonRow = new FlowLayoutPanel
         {
@@ -105,9 +118,35 @@ internal sealed class ProfileSettingsForm : Form
         CancelButton = btnCancel;
     }
 
+    private Panel BuildPathRow(TextBox textBox, bool forSaveDestination)
+    {
+        var panel = new Panel { Height = 23, Dock = DockStyle.Fill };
+        var browseBtn = new Button { Text = "…", Width = 28, Dock = DockStyle.Right };
+        browseBtn.Click += (_, _) =>
+        {
+            if (forSaveDestination)
+            {
+                using var dlg = new SaveFileDialog { Filter = "All Files (*.*)|*.*", OverwritePrompt = false };
+                if (!string.IsNullOrWhiteSpace(textBox.Text)) dlg.FileName = textBox.Text;
+                if (dlg.ShowDialog(this) == DialogResult.OK) textBox.Text = dlg.FileName;
+            }
+            else
+            {
+                using var dlg = new OpenFileDialog { Filter = "All Files (*.*)|*.*" };
+                if (dlg.ShowDialog(this) == DialogResult.OK) textBox.Text = dlg.FileName;
+            }
+        };
+        textBox.Dock = DockStyle.Fill;
+        panel.Controls.Add(textBox);
+        panel.Controls.Add(browseBtn);
+        return panel;
+    }
+
     private void LoadValues()
     {
         _txtDescription.Text = _metadata.Description;
+        _txtConfigSource.Text = _metadata.ConfigSourcePath;
+        _txtConfigDestination.Text = _metadata.ConfigDestinationPath;
         _nudSortOrder.Value = Math.Clamp(_metadata.SortOrder, 0, 999);
         UpdateColorPanel();
         UpdateHotkeyText();
@@ -214,7 +253,7 @@ internal sealed class ProfileSettingsForm : Form
         // Actually attempt the registration now, synchronously, so a conflict — with
         // another profile OR with some other application's global hotkey — is reported
         // right here instead of via a tray balloon after this dialog has already closed.
-        if (!HotkeyRegistry.TryAssignHotkey(_profile, _hotkeyModifiers, _hotkeyKey, out var error))
+        if (!_hotkeyRegistry.TryAssignHotkey(_profile, _hotkeyModifiers, _hotkeyKey, out var error))
         {
             _lblError.Text = error;
             DialogResult = DialogResult.None;
@@ -228,6 +267,8 @@ internal sealed class ProfileSettingsForm : Form
         meta.Color = _color;
         meta.HotkeyModifiers = _hotkeyKey == 0 ? 0 : _hotkeyModifiers;
         meta.HotkeyKey = _hotkeyKey;
+        meta.ConfigSourcePath = _txtConfigSource.Text.Trim();
+        meta.ConfigDestinationPath = _txtConfigDestination.Text.Trim();
         meta.Save(_profile.FilePath);
         _profile.ReloadMetadata();
     }

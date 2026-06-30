@@ -31,8 +31,8 @@ public class HostsFileTests
     [TestMethod]
     public void SaveAs_WritesFile()
     {
-        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string)}, null)!
-            .Invoke(new object[]{_hostsFile}) as HostsFile;
+        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string), typeof(IUndoManager), typeof(IHostsProfileList)}, null)!
+            .Invoke(new object[]{_hostsFile, new UndoManager(), HostsProfileList.Instance}) as HostsFile;
         hf!.Entries.Count.ShouldBe(1);
         var newPath = Path.Combine(_tempDir, "out.txt");
         hf.SaveAs(newPath);
@@ -43,8 +43,8 @@ public class HostsFileTests
     [TestMethod]
     public void Import_ReplacesEntries()
     {
-        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string)}, null)!
-            .Invoke(new object[]{_hostsFile}) as HostsFile;
+        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string), typeof(IUndoManager), typeof(IHostsProfileList)}, null)!
+            .Invoke(new object[]{_hostsFile, new UndoManager(), HostsProfileList.Instance}) as HostsFile;
         var importFile = Path.Combine(_tempDir, "import.txt");
         File.WriteAllLines(importFile, new[]{"127.0.0.2 other"});
         hf!.Import(importFile);
@@ -54,8 +54,8 @@ public class HostsFileTests
     [TestMethod]
     public void RestoreDefault_LoadsResource()
     {
-        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string)}, null)!
-            .Invoke(new object[]{_hostsFile}) as HostsFile;
+        var hf = typeof(HostsFile).GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, new[]{typeof(string), typeof(IUndoManager), typeof(IHostsProfileList)}, null)!
+            .Invoke(new object[]{_hostsFile, new UndoManager(), HostsProfileList.Instance}) as HostsFile;
         hf!.RestoreDefault();
         hf.Entries.Count.ShouldBeGreaterThan(0);
     }

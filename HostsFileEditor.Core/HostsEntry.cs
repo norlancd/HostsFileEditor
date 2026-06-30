@@ -40,9 +40,12 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
     private bool _ipAddressValid;
     private bool _hostnamesValid;
     private Ping? _ping;
+    private readonly IUndoManager _undoManager;
 
-    public HostsEntry()
+    public HostsEntry(IUndoManager undoManager)
     {
+        _undoManager = undoManager;
+
         _valid = false;
         _enabled = false;
         _comment = string.Empty;
@@ -54,7 +57,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
         _ping.PingCompleted += OnPingCompleted;
     }
 
-    public HostsEntry(string unparsedTextLine) : this()
+    public HostsEntry(IUndoManager undoManager, string unparsedTextLine) : this(undoManager)
     {
         _unparsedText = unparsedTextLine;
 
@@ -111,6 +114,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
 
     public HostsEntry(HostsEntry entry)
     {
+        _undoManager = entry._undoManager;
         _comment = entry._comment;
         _enabled = entry._enabled;
         _hostnames = entry._hostnames;
@@ -137,7 +141,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
             ArgumentNullException.ThrowIfNull(value);
 
             var local = _comment;
-            UndoManager.Instance.AddActions(
+            _undoManager.AddActions(
                 undoAction: () => Comment = local,
                 redoAction: () => Comment = value);
 
@@ -153,7 +157,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
         set
         {
             var local = _enabled;
-            UndoManager.Instance.AddActions(
+            _undoManager.AddActions(
                 undoAction: () => Enabled = local,
                 redoAction: () => Enabled = value);
 
@@ -169,7 +173,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
             ArgumentNullException.ThrowIfNull(value);
 
             var local = _hostnames;
-            UndoManager.Instance.AddActions(
+            _undoManager.AddActions(
                 undoAction: () => HostNames = local,
                 redoAction: () => HostNames = value.Trim());
 
@@ -185,7 +189,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
             ArgumentNullException.ThrowIfNull(value);
 
             var local = _ipAddress;
-            UndoManager.Instance.AddActions(
+            _undoManager.AddActions(
                 undoAction: () => IpAddress = local,
                 redoAction: () => IpAddress = value.Trim());
 

@@ -31,6 +31,23 @@ public class HostsProfileMetadata
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Path to a file that holds the config needed to interact with this profile's
+    /// servers (e.g. a VPN/SSH/kubeconfig). When set together with
+    /// <see cref="ConfigDestinationPath"/>, activating this profile copies it into
+    /// place automatically. Either or both blank means "do nothing" — most profiles
+    /// won't use this.
+    /// </summary>
+    [JsonPropertyName("configSourcePath")]
+    public string ConfigSourcePath { get; set; } = string.Empty;
+
+    /// <summary>The file <see cref="ConfigSourcePath"/> gets copied (overwritten) onto when this profile activates.</summary>
+    [JsonPropertyName("configDestinationPath")]
+    public string ConfigDestinationPath { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool HasConfigFile => !string.IsNullOrWhiteSpace(ConfigSourcePath) && !string.IsNullOrWhiteSpace(ConfigDestinationPath);
+
     [JsonIgnore]
     public bool HasHotkey => HotkeyKey != 0;
 

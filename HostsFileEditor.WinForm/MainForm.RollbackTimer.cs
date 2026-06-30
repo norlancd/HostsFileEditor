@@ -19,7 +19,7 @@ internal partial class MainForm
         svc.StateChanged += OnRollbackStateChanged;
 
         // Subscribe to profile changes to keep the status bar up to date
-        ProfileSwitcher.ActiveProfileChanged += RefreshStatusBar;
+        _profileSwitcher.ActiveProfileChanged += RefreshStatusBar;
         HostsFile.Instance.PropertyChanged += OnHostsFilePropertyChanged;
 
         BuildStatusBarLabels();
@@ -32,7 +32,7 @@ internal partial class MainForm
             svc.TimerExpired -= OnRollbackTimerExpired;
             svc.Notification -= OnRollbackNotification;
             svc.StateChanged -= OnRollbackStateChanged;
-            ProfileSwitcher.ActiveProfileChanged -= RefreshStatusBar;
+            _profileSwitcher.ActiveProfileChanged -= RefreshStatusBar;
             HostsFile.Instance.PropertyChanged -= OnHostsFilePropertyChanged;
             _timerCountdownTick?.Dispose();
             _statusProfileColorBitmap?.Dispose();
@@ -109,8 +109,8 @@ internal partial class MainForm
         if (InvokeRequired) { Invoke(RefreshStatusBar); return; }
         if (_statusProfileLabel == null) return;
 
-        var active = ProfileSwitcher.ActiveProfile;
-        _statusProfileLabel.Text = ProfileSwitcher.IsHostsDisabled
+        var active = _profileSwitcher.ActiveProfile;
+        _statusProfileLabel.Text = _profileSwitcher.IsHostsDisabled
             ? "Profile: Disabled"
             : active is { IsDefault: false }
                 ? $"Profile: {active.FileName}"
@@ -290,7 +290,7 @@ internal partial class MainForm
         {
             case RollbackExpiryForm.ExpiryResult.Revert:
                 _rollbackTimerService.ExecuteRevert(autoReverted: form.WasAutoReverted);
-                ProfileSwitcher.SyncActiveAfterExternalWrite();
+                _profileSwitcher.SyncActiveAfterExternalWrite();
                 break;
             case RollbackExpiryForm.ExpiryResult.Snooze:
                 _rollbackTimerService.Snooze(TimeSpan.FromMinutes(30));
@@ -300,12 +300,12 @@ internal partial class MainForm
                 break;
         }
 
-        HostsProfileList.Instance.Refresh();
+        _profileList.Refresh();
     }
 
     // ── Activate with timer ───────────────────────────────────────────────────
 
-    private void OnActivateWithTimerClick(HostsProfile profile)
+    private async void OnActivateWithTimerClick(HostsProfile profile)
     {
         var svc = _rollbackTimerService;
 
@@ -322,9 +322,9 @@ internal partial class MainForm
         if (durationForm.ShowDialog(this) != DialogResult.OK || durationForm.SelectedDuration == null)
             return;
 
-        svc.Start(
+        await svc.StartAsync(
             profile.FileName,
             durationForm.SelectedDuration.Value,
-            () => ProfileSwitcher.Activate(profile, ProfileSwitcher.TriggerSource.TrayMenu));
+            () => _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu));
     }
 }

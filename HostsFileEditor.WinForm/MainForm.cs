@@ -50,13 +50,32 @@ internal partial class MainForm : Form
     /// <summary>Injected rather than read from <see cref="RollbackTimerService.Instance"/> directly — part of the DIP cleanup.</summary>
     private readonly IRollbackTimerService _rollbackTimerService;
 
+    /// <summary>Injected rather than read from <see cref="Utilities.UndoManager.Instance"/> directly — part of the DIP cleanup.</summary>
+    private readonly IUndoManager _undoManager;
+
+    /// <summary>Injected rather than read from <see cref="HostsProfileList.Instance"/> directly — part of the DIP cleanup.</summary>
+    private readonly IHostsProfileList _profileList;
+
+    /// <summary>Constructed once in Program.cs (shared with WinUI via Core) and injected here.</summary>
+    private readonly IProfileSwitcher _profileSwitcher;
+
+    /// <summary>Injected rather than read from <see cref="HotkeyRegistry.Instance"/> directly — part of the DIP cleanup.</summary>
+    private readonly IHotkeyRegistry _hotkeyRegistry;
+
+    private readonly IProfileExportImportService _exportImportService;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="MainForm"/> class.
     /// </summary>
-    public MainForm(IAuditLogger auditLogger, IRollbackTimerService rollbackTimerService)
+    public MainForm(IAuditLogger auditLogger, IRollbackTimerService rollbackTimerService, IUndoManager undoManager, IHostsProfileList profileList, IProfileSwitcher profileSwitcher, IHotkeyRegistry hotkeyRegistry, IProfileExportImportService exportImportService)
     {
         _auditLogger = auditLogger;
         _rollbackTimerService = rollbackTimerService;
+        _undoManager = undoManager;
+        _profileList = profileList;
+        _profileSwitcher = profileSwitcher;
+        _hotkeyRegistry = hotkeyRegistry;
+        _exportImportService = exportImportService;
 
         InitializeComponent();
 
@@ -92,9 +111,9 @@ internal partial class MainForm : Form
         else if (message.Msg == WmHotkey)
         {
             int id = message.WParam.ToInt32();
-            var profile = HotkeyRegistry.GetProfileById(id);
+            var profile = _hotkeyRegistry.GetProfileById(id);
             if (profile != null)
-                ProfileSwitcher.Activate(profile, ProfileSwitcher.TriggerSource.TrayHotkey);
+                _ = _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayHotkey);
         }
 
         base.WndProc(ref message);
@@ -234,7 +253,7 @@ internal partial class MainForm : Form
             DataSource = HostsFile.Instance.Entries
         };
 
-        _hostEntriesView.AddingNew += (s, args) => args.NewObject = new HostsEntry(string.Empty);
+        _hostEntriesView.AddingNew += (s, args) => args.NewObject = new HostsEntry(HostsFile.Instance.Entries.UndoManager, string.Empty);
 
         // Tell grid how to clear sort of underlying data source
         // since it doesn't know how by itself
@@ -262,10 +281,10 @@ internal partial class MainForm : Form
         // after SetupRollbackTimer() (as before) meant that check always saw null.
         var startupRevertMessage = _rollbackTimerService.RecoverFromRestart();
         if (startupRevertMessage != null)
-            ProfileSwitcher.SyncActiveAfterExternalWrite();
+            _profileSwitcher.SyncActiveAfterExternalWrite();
         SetupRollbackTimer();
 
-        _externalChangeWatcher = new ProfileExternalChangeWatcher(this, TakeBaselineSnapshot);
+        _externalChangeWatcher = new ProfileExternalChangeWatcher(this, TakeBaselineSnapshot, _profileSwitcher);
         FormClosed += (_, _) => _externalChangeWatcher?.Dispose();
 
         // HACK: Make sure a newly added row gets committed after
@@ -369,14 +388,14 @@ internal partial class MainForm : Form
     /// <param name="e">
     /// The event arguments.
     /// </param>
-    private void OnImportClick(object sender, EventArgs e)
+    private async void OnImportClick(object sender, EventArgs e)
     {
         if (openFileDialog.ShowDialog(this) != DialogResult.OK) return;
 
         using var inputDialog = new InputForm();
         inputDialog.Text = Text;
         inputDialog.Prompt = Properties.Resources.InputProfilePrompt;
-        inputDialog.Input = ProfilesMenuController.GenerateUniqueProfileName(Path.GetFileNameWithoutExtension(openFileDialog.FileName));
+        inputDialog.Input = _profilesMenu!.GenerateUniqueProfileName(Path.GetFileNameWithoutExtension(openFileDialog.FileName));
 
         if (inputDialog.ShowDialog(this) != DialogResult.OK) return;
 
@@ -385,7 +404,7 @@ internal partial class MainForm : Form
         HostsFile.Instance.Import(openFileDialog.FileName);
         _auditLogger.Log(AuditActionType.FileImported, AuditSource.MainForm, new AuditDetail { SourcePath = openFileDialog.FileName });
 
-        _profilesMenu!.ActivateAsNewProfile(inputDialog.Input);
+        await _profilesMenu!.ActivateAsNewProfile(inputDialog.Input);
     }
 
     /// <summary>
@@ -463,7 +482,7 @@ internal partial class MainForm : Form
 
         // Keep the active profile's own file in sync with what was just saved,
         // so edits made after activating a profile aren't lost on next activation
-        var active = ProfileSwitcher.ActiveProfile;
+        var active = _profileSwitcher.ActiveProfile;
         if (active != null && File.Exists(active.FilePath))
         {
             HostsFile.Instance.SaveAs(active.FilePath);
@@ -528,10 +547,12 @@ internal partial class MainForm : Form
 
     private void InitializeHotkeySupport()
     {
-        ProfileSwitcher.ProfileError = msg =>
-            notifyIcon.ShowBalloonTip(3000, "Profile Error", msg, ToolTipIcon.Error);
+        // A balloon tip is too easy to miss (and Windows may suppress it entirely
+        // depending on notification settings) — a real dialog can't be missed.
+        _profileSwitcher.ProfileError = msg =>
+            MessageBox.Show(this, msg, "Profile Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
 
-        HotkeyRegistry.HotkeyConflictNotify += (profile, meta) =>
+        _hotkeyRegistry.HotkeyConflictNotify += (profile, meta) =>
         {
             var chord = $"{meta.HotkeyModifiers}+{meta.HotkeyKey}";
             notifyIcon.ShowBalloonTip(
@@ -541,7 +562,7 @@ internal partial class MainForm : Form
                 ToolTipIcon.Warning);
         };
 
-        HotkeyRegistry.Initialize(Handle);
+        _hotkeyRegistry.Initialize(Handle);
 
         // OnVisibleChanged toggles ShowInTaskbar (hide-to-tray / restore), and changing
         // that property on a Form whose handle already exists forces WinForms to destroy
@@ -550,7 +571,7 @@ internal partial class MainForm : Form
         // with ERROR_INVALID_WINDOW_HANDLE — re-sync on every recreation to stay valid.
         HandleCreated += (_, _) =>
         {
-            HotkeyRegistry.Initialize(Handle);
+            _hotkeyRegistry.Initialize(Handle);
 
             // $this.Icon is only applied once, from InitializeComponent(), before the
             // first handle ever exists — a later recreation leaves the new handle with
@@ -559,19 +580,19 @@ internal partial class MainForm : Form
             Icon = Properties.Resources.HostsFileEditor;
         };
 
-        _diffGate = new DiffBeforeSwitchGate(this, Text);
+        _diffGate = new DiffBeforeSwitchGate(this, Text, _profileSwitcher);
         menuDiffBeforeSwitch.Checked = Properties.Settings.Default.DiffBeforeSwitchEnabled;
 
         // Subscribes itself to HostsProfileList.Instance.ListChanged and
-        // ProfileSwitcher.ActiveProfileChanged, so it keeps the Profiles menu in
+        // _profileSwitcher.ActiveProfileChanged, so it keeps the Profiles menu in
         // sync on its own from here on — constructed before RestoreFromSettings()
         // so that call's own ActiveProfileChanged also triggers an initial build.
         _profilesMenu = new ProfilesMenuController(
-            this, dataGridViewHostsEntries, _auditLogger, menuBarProfiles, menuTrayProfiles,
+            this, dataGridViewHostsEntries, _auditLogger, _profileList, _profileSwitcher, _hotkeyRegistry, _exportImportService, menuBarProfiles, menuTrayProfiles,
             () => _externalChangeWatcher?.NotifyActiveProfileFileWritten(),
             OnActivateWithTimerClick);
 
-        ProfileSwitcher.RestoreFromSettings();
+        _profileSwitcher.RestoreFromSettings();
 
         // Build initial menus and tray icon (RestoreFromSettings() above already
         // triggers this when it finds a match, but not when the active profile is
@@ -580,19 +601,19 @@ internal partial class MainForm : Form
         UpdateNotifyIcon();
         UpdateGridEnabledState();
 
-        ProfileSwitcher.ActiveProfileChanged += UpdateNotifyIcon;
-        ProfileSwitcher.ActiveProfileChanged += UpdateGridEnabledState;
+        _profileSwitcher.ActiveProfileChanged += UpdateNotifyIcon;
+        _profileSwitcher.ActiveProfileChanged += UpdateGridEnabledState;
 
         // Subscribed after RestoreFromSettings() runs, so resuming the previous
         // session's active profile on launch doesn't itself pop a notification —
         // only real switches made while the app is running do.
-        ProfileSwitcher.ActiveProfileChanged += NotifyProfileSwitched;
+        _profileSwitcher.ActiveProfileChanged += NotifyProfileSwitched;
     }
 
     private void NotifyProfileSwitched()
     {
-        var active = ProfileSwitcher.ActiveProfile;
-        var message = ProfileSwitcher.IsHostsDisabled
+        var active = _profileSwitcher.ActiveProfile;
+        var message = _profileSwitcher.IsHostsDisabled
             ? "Hosts file disabled — no profile active"
             : active is { IsDefault: false }
                 ? $"Switched to profile \"{active.FileName}\""
@@ -602,7 +623,7 @@ internal partial class MainForm : Form
 
     private void UpdateNotifyIcon()
     {
-        notifyIcon.Icon = ProfileSwitcher.IsHostsDisabled
+        notifyIcon.Icon = _profileSwitcher.IsHostsDisabled
             ? Resources.HostsFileEditorDisabled
             : Resources.HostsFileEditor;
     }
@@ -616,7 +637,7 @@ internal partial class MainForm : Form
     /// </summary>
     private void UpdateGridEnabledState()
     {
-        bool enabled = !ProfileSwitcher.IsHostsDisabled;
+        bool enabled = !_profileSwitcher.IsHostsDisabled;
 
         dataGridViewHostsEntries.Enabled = enabled;
 
@@ -684,7 +705,7 @@ internal partial class MainForm : Form
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/> instance 
     /// containing the event data.</param>
-    private void OnUndoClick(object sender, EventArgs e) => UndoManager.Instance.Undo();
+    private void OnUndoClick(object sender, EventArgs e) => _undoManager.Undo();
 
     /// <summary>
     /// Called when redo clicked.
@@ -692,7 +713,7 @@ internal partial class MainForm : Form
     /// <param name="sender">The sender.</param>
     /// <param name="e">The <see cref="System.EventArgs"/> instance 
     /// containing the event data.</param>
-    private void OnRedoClick(object sender, EventArgs e) => UndoManager.Instance.Redo();
+    private void OnRedoClick(object sender, EventArgs e) => _undoManager.Redo();
 
     /// <summary>
     /// Called when ping IPs clicked.

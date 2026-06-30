@@ -199,6 +199,10 @@ internal class AuditLogForm : Form
             => e.Detail?.SourcePath is string p ? Path.GetFileName(p) : string.Empty,
         nameof(AuditActionType.RollbackExecuted)
             => $"reverted to {e.Detail?.ProfileReverted}",
+        nameof(AuditActionType.ProfileConfigFileApplied)
+            => $"{Path.GetFileName(e.Detail?.SourcePath)} → {e.Detail?.DestinationPath}",
+        nameof(AuditActionType.ProfileConfigFileFailed)
+            => $"{Path.GetFileName(e.Detail?.SourcePath)} → {e.Detail?.DestinationPath} (failed)",
         _ => string.Empty
     };
 
@@ -236,6 +240,7 @@ internal class AuditLogForm : Form
                     sb.AppendLine($"  ~ {m.Before?.Hostnames}  {m.Before?.Ip} → {m.After?.Ip}");
             }
             if (d.SourcePath != null) sb.AppendLine($"Source file: {d.SourcePath}");
+            if (d.DestinationPath != null) sb.AppendLine($"Destination file: {d.DestinationPath}");
             if (d.SourceUrl != null) sb.AppendLine($"Source URL: {d.SourceUrl}");
         }
         return sb.ToString().TrimEnd();

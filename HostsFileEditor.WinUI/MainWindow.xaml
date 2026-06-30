@@ -7,7 +7,7 @@
     xmlns:local="using:HostsFileEditor"
     mc:Ignorable="d"
     Title="Hosts File Editor">
-    <Grid RowDefinitions="Auto,Auto,*" Background="Transparent" MinWidth="300" MinHeight="480">
+    <Grid RowDefinitions="Auto,Auto,Auto,*" Background="Transparent" MinWidth="300" MinHeight="480">
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="C" Modifiers="Control" Invoked="OnCopyAcceleratorInvoked"/>
             <KeyboardAccelerator Key="X" Modifiers="Control" Invoked="OnCutAcceleratorInvoked"/>
@@ -22,7 +22,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                 <Button x:Name="BackButton"
                         Width="38"
                         Height="36"
@@ -40,14 +40,59 @@
                        VerticalAlignment="Center"/>
                 <TextBlock Text="Hosts File Editor" FontSize="11" FontWeight="Normal" VerticalAlignment="Center"/>
             </StackPanel>
+            <Button x:Name="TimerStatusButton"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Margin="12,0,0,0"
+                    Padding="8,4,8,4"
+                    Background="Transparent"
+                    Visibility="{x:Bind TimerStatusVisibility, Mode=OneWay}"
+                    Content="{x:Bind TimerStatusText, Mode=OneWay}">
+                <Button.Flyout>
+                    <MenuFlyout x:Name="TimerStatusFlyout" Placement="BottomEdgeAlignedLeft"/>
+                </Button.Flyout>
+            </Button>
         </Grid>
-        <Grid x:Name="TopCommandRow" Grid.Row="1" Background="Transparent" Visibility="{x:Bind MainViewVisibility, Mode=OneWay}" ColumnSpacing="4" Padding="8,0">
+        <MenuBar Grid.Row="1" Background="Transparent">
+            <MenuBarItem Title="File">
+                <MenuFlyoutItem Text="Import" Icon="OpenFile" Click="OnImportClick"/>
+                <MenuFlyoutItem Text="Save As" Icon="SaveLocal" Click="OnSaveAsClick"/>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="Open Text Editor" Click="OnOpenInTextEditorClick">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE70F;"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Restore Default" Click="OnRestoreClick">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE81C;"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <ToggleMenuFlyoutItem Text="Ping IPs" IsChecked="{x:Bind IsPingIPs, Mode=OneWay}" Click="OnPingIPsClick">
+                    <ToggleMenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE774;"/>
+                    </ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="Remove Default Text" IsChecked="{x:Bind IsRemoveDefaultText, Mode=OneWay}" Click="OnRemoveDefaultTextClick">
+                    <ToggleMenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE75C;"/>
+                    </ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
+                <ToggleMenuFlyoutItem Text="Show Diff Before Switching Profiles" IsChecked="{x:Bind IsDiffBeforeSwitchEnabled, Mode=OneWay}" Click="OnDiffBeforeSwitchClick">
+                    <ToggleMenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE8AB;"/>
+                    </ToggleMenuFlyoutItem.Icon>
+                </ToggleMenuFlyoutItem>
+            </MenuBarItem>
+            <MenuBarItem x:Name="ProfilesMenuBarItem" Title="{x:Bind ProfilesMenuTitle, Mode=OneWay}"/>
+        </MenuBar>
+        <Grid x:Name="TopCommandRow" Grid.Row="2" Background="Transparent" Visibility="{x:Bind MainViewVisibility, Mode=OneWay}" ColumnSpacing="4" Padding="8,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -59,7 +104,7 @@
                         </VisualState.StateTriggers>
                         <VisualState.Setters>
                             <Setter Target="FilterPanel.(Grid.Row)" Value="0"/>
-                            <Setter Target="FilterPanel.(Grid.Column)" Value="2"/>
+                            <Setter Target="FilterPanel.(Grid.Column)" Value="1"/>
                             <Setter Target="FilterPanel.(Grid.ColumnSpan)" Value="1"/>
                             <Setter Target="FilterPanel.HorizontalAlignment" Value="Right"/>
                             <Setter Target="FilterTextBox.Width" Value="200"/>
@@ -72,59 +117,14 @@
                         <VisualState.Setters>
                             <Setter Target="FilterPanel.(Grid.Row)" Value="1"/>
                             <Setter Target="FilterPanel.(Grid.Column)" Value="0"/>
-                            <Setter Target="FilterPanel.(Grid.ColumnSpan)" Value="3"/>
+                            <Setter Target="FilterPanel.(Grid.ColumnSpan)" Value="2"/>
                             <Setter Target="FilterPanel.HorizontalAlignment" Value="Stretch"/>
                             <Setter Target="FilterTextBox.Width" Value="Auto"/>
                         </VisualState.Setters>
                     </VisualState>
                 </VisualStateGroup>
             </VisualStateManager.VisualStateGroups>
-            <Button x:Name="HamburgerButton"
-                    Grid.Column="0"
-                    Width="40"
-                    Height="40"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    Background="Transparent"
-                    BorderThickness="0">
-                <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                        <MenuFlyoutItem Text="Import" Icon="OpenFile" Click="OnImportClick"/>
-                        <MenuFlyoutItem Text="Save As" Icon="SaveLocal" Click="OnSaveAsClick" />
-                        <MenuFlyoutItem Text="Archive" Click="OnArchiveClick">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE7C3;"/>
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutSeparator/>
-                        <ToggleMenuFlyoutItem Text="Ping IPs" IsChecked="{x:Bind IsPingIPs, Mode=OneWay}" Click="OnPingIPsClick">
-                            <ToggleMenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE774;"/>
-                            </ToggleMenuFlyoutItem.Icon>
-                        </ToggleMenuFlyoutItem>
-                        <ToggleMenuFlyoutItem Text="Remove Default Text" IsChecked="{x:Bind IsRemoveDefaultText, Mode=OneWay}" Click="OnRemoveDefaultTextClick">
-                            <ToggleMenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE75C;"/>
-                            </ToggleMenuFlyoutItem.Icon>
-                        </ToggleMenuFlyoutItem>
-                        <MenuFlyoutItem Text="Restore Default" Click="OnRestoreClick">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE81C;"/>
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                        <MenuFlyoutItem Text="Open Text Editor" Click="OnOpenInTextEditorClick">
-                            <MenuFlyoutItem.Icon>
-                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE70F;"/>
-                            </MenuFlyoutItem.Icon>
-                        </MenuFlyoutItem>
-                    </MenuFlyout>
-                </Button.Flyout>
-                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE700;" FontSize="16"/>
-                <ToolTipService.ToolTip>
-                    <ToolTip Content="Menu"/>
-                </ToolTipService.ToolTip>
-            </Button>
-            <CommandBar Grid.Column="1"
+            <CommandBar Grid.Column="0"
                         HorizontalAlignment="Left"
                         Background="Transparent"
                         DefaultLabelPosition="Right"
@@ -158,14 +158,14 @@
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarSeparator/>
-                <AppBarToggleButton Label="View Archive" IsChecked="{x:Bind IsArchiveVisible, Mode=OneWay}" Click="OnViewArchiveClick">
+                <AppBarToggleButton Label="Manage Profiles" IsChecked="{x:Bind IsArchiveVisible, Mode=OneWay}" Click="OnViewArchiveClick">
                     <AppBarToggleButton.Icon>
                         <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE71D;"/>
                     </AppBarToggleButton.Icon>
                 </AppBarToggleButton>
             </CommandBar>
             <!-- Compact filter panel adjusted to avoid clipping -->
-            <Grid x:Name="FilterPanel" Grid.Column="2" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0">
+            <Grid x:Name="FilterPanel" Grid.Column="1" Grid.Row="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="2"/>
@@ -232,7 +232,7 @@
                 </Grid>
             </Grid>
         </Grid>
-        <Grid Grid.Row="2" Background="Transparent">
+        <Grid Grid.Row="3" Background="Transparent">
             <Grid x:Name="MainHost" Margin="8,0,8,8" RowDefinitions="Auto,*" Background="Transparent" Visibility="{x:Bind MainViewVisibility, Mode=OneWay}">
                 <ListView x:Name="EntriesList"
                           Grid.Row="1"
@@ -298,9 +298,15 @@
             </Grid>
             <Grid x:Name="ArchiveHost" Visibility="{x:Bind ArchiveViewVisibility, Mode=OneWay}" Margin="8" RowDefinitions="Auto,*">
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
-                    <TextBlock Text="Archives" FontWeight="Normal" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                    <TextBlock Grid.Column="0" Text="Profiles" FontWeight="Normal" VerticalAlignment="Center" Margin="16,0,8,0"/>
                     <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" Padding="0" HorizontalAlignment="Left">
-                        <AppBarButton x:Name="ArchiveLoadButton" Icon="OpenFile" Label="Load" Click="OnArchiveLoadClick" IsEnabled="False"/>
+                        <AppBarButton x:Name="ArchiveLoadButton" Icon="OpenFile" Label="Activate" Click="OnArchiveLoadClick" IsEnabled="False"/>
+                        <AppBarButton x:Name="ArchiveTimerButton" Label="Activate Temporarily" Click="OnArchiveTimerClick" IsEnabled="False">
+                            <AppBarButton.Icon>
+                                <FontIcon FontFamily="Segoe MDL2 Assets" Glyph="&#xE916;"/>
+                            </AppBarButton.Icon>
+                        </AppBarButton>
+                        <AppBarButton x:Name="ArchiveSettingsButton" Icon="Setting" Label="Settings" Click="OnArchiveSettingsClick" IsEnabled="False"/>
                         <AppBarButton x:Name="ArchiveDeleteButton" Icon="Delete" Label="Delete" Click="OnArchiveDeleteClick" IsEnabled="False"/>
                     </CommandBar>
                 </Grid>
@@ -308,11 +314,18 @@
                     <ListView x:Name="ArchiveList" Margin="0,8,0,0" Background="Transparent" ItemsSource="{x:Bind Archives, Mode=OneWay}" SelectionChanged="OnArchiveSelectionChanged">
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="local:HostsProfile">
-                                <TextBlock Text="{x:Bind FileName}"/>
+                                <Grid ColumnDefinitions="Auto,*" Padding="0,4,0,4">
+                                    <Ellipse Grid.Column="0" Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center"
+                                             Fill="{x:Bind local:ProfileBrushHelper.GetColorBrush(Self), Mode=OneWay}"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{x:Bind FileName}"/>
+                                        <TextBlock Text="{x:Bind DisplayDescription}" FontSize="11" Foreground="Gray"/>
+                                    </StackPanel>
+                                </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
-                    <TextBlock Text="No archives yet." FontStyle="Italic" Foreground="Gray"
+                    <TextBlock Text="No profiles yet." FontStyle="Italic" Foreground="Gray"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                IsHitTestVisible="False" Visibility="{x:Bind ArchivesEmptyVisibility, Mode=OneWay}"/>
                 </Grid>

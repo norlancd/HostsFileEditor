@@ -1,4 +1,5 @@
 using HostsFileEditor.Properties;
+using HostsFileEditor.Utilities;
 
 namespace HostsFileEditor;
 
@@ -25,9 +26,22 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.ThreadException += OnApplicationThreadException;
-            Application.ApplicationExit += (_, _) => HotkeyRegistry.UnregisterAll();
+            Application.ApplicationExit += (_, _) => HotkeyRegistry.Instance.UnregisterAll();
 
-            _mainForm = new MainForm(AuditLogger.Instance, RollbackTimerService.Instance);
+            // Must run before anything touches HostsFile.Instance, so HostsEntryList/HostsEntry/
+            // SaveAsProfile register undo actions and save profiles against these exact
+            // instances — not a second one resolved later.
+            HostsFile.Configure(UndoManager.Instance, HostsProfileList.Instance);
+
+            // ProfileSwitcher moved to Core (shared with WinUI) and no longer has a static
+            // Instance — each UI's composition root owns the one instance and backs it with
+            // its own settings persistence (here: WinFormsSettingsStore).
+            var profileSwitcher = new ProfileSwitcher(HostsFile.Instance, HostsProfileList.Instance, new WinFormsSettingsStore(), AuditLogger.Instance);
+            var exportImportService = new ProfileExportImportService(HostsProfileList.Instance, AuditLogger.Instance);
+
+            _mainForm = new MainForm(
+                AuditLogger.Instance, RollbackTimerService.Instance, UndoManager.Instance,
+                HostsProfileList.Instance, profileSwitcher, HotkeyRegistry.Instance, exportImportService);
             Application.Run(_mainForm);
         }
         else

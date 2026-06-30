@@ -52,7 +52,7 @@ public class RollbackTimerService : IRollbackTimerService
     /// <paramref name="profileActivation"/> to do the actual switch, then starts the countdown.
     /// Returns false if the profile activation callback throws.
     /// </summary>
-    public bool Start(string profileName, TimeSpan duration, Action profileActivation)
+    public async Task<bool> StartAsync(string profileName, TimeSpan duration, Func<Task> profileActivation)
     {
         string? snapshotPath = null;
 
@@ -84,7 +84,7 @@ public class RollbackTimerService : IRollbackTimerService
         // Activate profile OUTSIDE the lock (may call back into service via audit log)
         try
         {
-            profileActivation();
+            await profileActivation();
         }
         catch
         {

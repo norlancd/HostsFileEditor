@@ -14,6 +14,10 @@ internal sealed class ProfilesMenuController
     private readonly Form _owner;
     private readonly HostsEntryDataGridView _grid;
     private readonly IAuditLogger _auditLogger;
+    private readonly IHostsProfileList _profileList;
+    private readonly IProfileSwitcher _profileSwitcher;
+    private readonly IHotkeyRegistry _hotkeyRegistry;
+    private readonly IProfileExportImportService _exportImportService;
     private readonly ToolStripMenuItem _menuBar;
     private readonly ToolStripMenuItem _menuTray;
     private readonly Action _notifyActiveProfileFileWritten;
@@ -23,6 +27,10 @@ internal sealed class ProfilesMenuController
         Form owner,
         HostsEntryDataGridView grid,
         IAuditLogger auditLogger,
+        IHostsProfileList profileList,
+        IProfileSwitcher profileSwitcher,
+        IHotkeyRegistry hotkeyRegistry,
+        IProfileExportImportService exportImportService,
         ToolStripMenuItem menuBar,
         ToolStripMenuItem menuTray,
         Action notifyActiveProfileFileWritten,
@@ -31,13 +39,17 @@ internal sealed class ProfilesMenuController
         _owner = owner;
         _grid = grid;
         _auditLogger = auditLogger;
+        _profileList = profileList;
+        _profileSwitcher = profileSwitcher;
+        _hotkeyRegistry = hotkeyRegistry;
+        _exportImportService = exportImportService;
         _menuBar = menuBar;
         _menuTray = menuTray;
         _notifyActiveProfileFileWritten = notifyActiveProfileFileWritten;
         _activateWithTimer = activateWithTimer;
 
-        HostsProfileList.Instance.ListChanged += (_, _) => Rebuild();
-        ProfileSwitcher.ActiveProfileChanged += Rebuild;
+        _profileList.ListChanged += (_, _) => Rebuild();
+        _profileSwitcher.ActiveProfileChanged += Rebuild;
     }
 
     public void Rebuild()
@@ -57,17 +69,17 @@ internal sealed class ProfilesMenuController
     /// as a new profile and activates it. Used by File &gt; Import once the caller
     /// has read the source file in and the user has picked a name for it.
     /// </summary>
-    public void ActivateAsNewProfile(string profileName)
+    public async Task ActivateAsNewProfile(string profileName)
     {
         HostsFile.Instance.SaveAsProfile(profileName);
 
-        var imported = HostsProfileList.Instance.FirstOrDefault(p =>
+        var imported = _profileList.FirstOrDefault(p =>
             string.Equals(p.FileName, HostsProfile.NormalizeName(profileName), StringComparison.OrdinalIgnoreCase));
 
         // Imported content is identical to what was just saved, so the diff-before-switch
         // dialog (if enabled) will skip itself and this activates silently — same as Clone.
         if (imported != null)
-            ProfileSwitcher.Activate(imported, ProfileSwitcher.TriggerSource.TrayMenu);
+            await _profileSwitcher.ActivateAsync(imported, ProfileSwitcher.TriggerSource.TrayMenu);
     }
 
     /// <summary>
@@ -76,7 +88,7 @@ internal sealed class ProfilesMenuController
     /// (matching what already shows up as a peer entry in the Profiles menu) —
     /// in which case " (2)", " (3)", etc. is appended until it's unique.
     /// </summary>
-    public static string GenerateUniqueProfileName(string baseName)
+    public string GenerateUniqueProfileName(string baseName)
     {
         if (string.IsNullOrWhiteSpace(baseName))
             baseName = "profile";
@@ -84,7 +96,7 @@ internal sealed class ProfilesMenuController
         // "default" isn't listed — it's now a real profile (Default.hosts), so
         // existingNames below already catches it like any other taken name.
         var reserved = new[] { "hosts", "disabled" };
-        var existingNames = HostsProfileList.Instance
+        var existingNames = _profileList
             .Select(p => Path.GetFileNameWithoutExtension(p.FileName))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -109,18 +121,18 @@ internal sealed class ProfilesMenuController
     /// always present, so it gets Raw Edit/Profile Settings/Activate Temporarily
     /// for free via the exact same code paths as user-created profiles.
     /// </summary>
-    private static HostsProfile GetDefaultProfile() =>
-        HostsProfileList.Instance.FirstOrDefault(p => p.IsDefault) ?? new HostsProfile("Default");
+    private HostsProfile GetDefaultProfile() =>
+        _profileList.FirstOrDefault(p => p.IsDefault) ?? new HostsProfile("Default");
 
     /// <summary>
     /// "Default" in the Profiles menu — reached from the same submenu as
     /// Activate/Reload for named profiles, so it behaves like an actual switch.
     /// </summary>
-    public void RestoreToDefault()
+    public async Task RestoreToDefault()
     {
         _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
 
-        if (!ProfileSwitcher.Activate(GetDefaultProfile(), ProfileSwitcher.TriggerSource.TrayMenu))
+        if (!await _profileSwitcher.ActivateAsync(GetDefaultProfile(), ProfileSwitcher.TriggerSource.TrayMenu))
             return; // file missing, or user cancelled at the diff dialog
 
         _auditLogger.Log(AuditActionType.DefaultRestored, AuditSource.MainForm);
@@ -135,14 +147,14 @@ internal sealed class ProfilesMenuController
     {
         _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
 
-        ProfileSwitcher.DisableAll();
+        _profileSwitcher.DisableAll();
         _auditLogger.Log(AuditActionType.HostsFileDisabled, AuditSource.MainForm);
     }
 
-    private void OnHostsFileDisabledClick(object sender, EventArgs e)
+    private async void OnHostsFileDisabledClick(object sender, EventArgs e)
     {
-        if (ProfileSwitcher.IsHostsDisabled)
-            RestoreToDefault();
+        if (_profileSwitcher.IsHostsDisabled)
+            await RestoreToDefault();
         else
             DisableAll();
     }
@@ -151,18 +163,26 @@ internal sealed class ProfilesMenuController
     {
         parent.DropDownItems.Clear();
 
-        var menuSaveCurrent = new ToolStripMenuItem("Save Current as Profile…") { Enabled = !ProfileSwitcher.IsHostsDisabled };
+        var menuSaveCurrent = new ToolStripMenuItem("Save Current as Profile…") { Enabled = !_profileSwitcher.IsHostsDisabled };
         menuSaveCurrent.Click += OnSaveCurrentAsProfileClick;
         parent.DropDownItems.Add(menuSaveCurrent);
 
-        var menuNewEmpty = new ToolStripMenuItem("New Empty Profile…") { Enabled = !ProfileSwitcher.IsHostsDisabled };
+        var menuNewEmpty = new ToolStripMenuItem("New Empty Profile…") { Enabled = !_profileSwitcher.IsHostsDisabled };
         menuNewEmpty.Click += OnNewEmptyProfileClick;
         parent.DropDownItems.Add(menuNewEmpty);
+
+        var menuExport = new ToolStripMenuItem("Export Profiles…");
+        menuExport.Click += OnExportProfilesClick;
+        parent.DropDownItems.Add(menuExport);
+
+        var menuImport = new ToolStripMenuItem("Import Profiles…");
+        menuImport.Click += OnImportProfilesClick;
+        parent.DropDownItems.Add(menuImport);
 
         parent.DropDownItems.Add(new ToolStripSeparator());
 
         var defaultProfile = GetDefaultProfile();
-        bool isDefaultActive = ProfileSwitcher.ActiveProfile == defaultProfile && !ProfileSwitcher.IsHostsDisabled;
+        bool isDefaultActive = _profileSwitcher.ActiveProfile == defaultProfile && !_profileSwitcher.IsHostsDisabled;
         var defaultFontStyle = isDefaultActive ? (FontStyle.Italic | FontStyle.Bold) : FontStyle.Italic;
         var menuDefault = BuildProfileMenuItem(parent, defaultProfile, "Default", new Font(parent.Font, defaultFontStyle),
             isDefaultActive, includeDelete: false);
@@ -171,7 +191,7 @@ internal sealed class ProfilesMenuController
         parent.DropDownItems.Add(new ToolStripSeparator());
 
         // ── User-created profiles ──────────────────────────────────────────
-        var profiles = HostsProfileList.Instance
+        var profiles = _profileList
             .Where(a => !a.IsDefault)
             .OrderBy(a => a.Metadata?.SortOrder ?? 0)
             .ThenBy(a => a.FileName)
@@ -179,7 +199,7 @@ internal sealed class ProfilesMenuController
 
         foreach (var profile in profiles)
         {
-            bool isActive = ProfileSwitcher.ActiveProfile == profile && !ProfileSwitcher.IsHostsDisabled;
+            bool isActive = _profileSwitcher.ActiveProfile == profile && !_profileSwitcher.IsHostsDisabled;
             var font = isActive ? new Font(parent.Font, FontStyle.Bold) : parent.Font;
             var profileItem = BuildProfileMenuItem(parent, profile, profile.FileName, font, isActive, includeDelete: true);
             parent.DropDownItems.Add(profileItem);
@@ -192,7 +212,7 @@ internal sealed class ProfilesMenuController
         // rather than next to Default, where it could be mistaken for one more profile.
         var menuHostsDisabled = new ToolStripMenuItem("Hosts File Disabled")
         {
-            Checked = ProfileSwitcher.IsHostsDisabled,
+            Checked = _profileSwitcher.IsHostsDisabled,
             CheckOnClick = true
         };
         menuHostsDisabled.Click += (s, e) => OnHostsFileDisabledClick(s!, e);
@@ -215,7 +235,7 @@ internal sealed class ProfilesMenuController
         var item = new ToolStripMenuItem(label)
         {
             Checked = isActive,
-            Enabled = !ProfileSwitcher.IsHostsDisabled,
+            Enabled = !_profileSwitcher.IsHostsDisabled,
             Font = font
         };
 
@@ -226,8 +246,8 @@ internal sealed class ProfilesMenuController
         // reloads from this profile's file — relabel so that's clear, rather
         // than reading as a redundant "activate the thing that's already active".
         var menuActivate = new ToolStripMenuItem(isActive ? "Reload" : "Activate") { Enabled = exists, Font = parent.Font };
-        menuActivate.Click += (_, _) =>
-            ProfileSwitcher.Activate(captured, ProfileSwitcher.TriggerSource.TrayMenu);
+        menuActivate.Click += async (_, _) =>
+            await _profileSwitcher.ActivateAsync(captured, ProfileSwitcher.TriggerSource.TrayMenu);
 
         var menuClone = new ToolStripMenuItem("Clone…") { Enabled = exists, Font = parent.Font };
         menuClone.Click += (_, _) => OnCloneProfileClick(captured);
@@ -238,7 +258,7 @@ internal sealed class ProfilesMenuController
         var menuSettings = new ToolStripMenuItem("Profile Settings…") { Font = parent.Font };
         menuSettings.Click += (_, _) =>
         {
-            using var dlg = new ProfileSettingsForm(captured);
+            using var dlg = new ProfileSettingsForm(captured, _hotkeyRegistry);
             dlg.ShowDialog(_owner);
             Rebuild(); // color/sort-order/description changes don't fire ListChanged
         };
@@ -315,11 +335,11 @@ internal sealed class ProfilesMenuController
             // Write default Windows hosts content
             File.WriteAllText(profile.FilePath, Properties.Resources.hosts);
 
-            HostsProfileList.Instance.Add(profile);
+            _profileList.Add(profile);
         }
     }
 
-    private void OnCloneProfileClick(HostsProfile source)
+    private async void OnCloneProfileClick(HostsProfile source)
     {
         using var inputDialog = new InputForm();
         inputDialog.Text = _owner.Text;
@@ -329,7 +349,7 @@ internal sealed class ProfilesMenuController
         {
             // If cloning the profile currently loaded on screen, sync its saved file
             // with the live (possibly edited, uncommitted) grid contents first
-            if (source == ProfileSwitcher.ActiveProfile)
+            if (source == _profileSwitcher.ActiveProfile)
             {
                 _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
                 HostsFile.Instance.SaveAs(source.FilePath);
@@ -338,17 +358,17 @@ internal sealed class ProfilesMenuController
 
             var destProfile = new HostsProfile(inputDialog.Input);
             File.Copy(source.FilePath, destProfile.FilePath);
-            HostsProfileList.Instance.Add(destProfile);
+            _profileList.Add(destProfile);
 
             // Clone is identical to the source at this point, so the diff-before-switch
             // dialog (if enabled) will skip itself and this activates silently
-            ProfileSwitcher.Activate(destProfile, ProfileSwitcher.TriggerSource.TrayMenu);
+            await _profileSwitcher.ActivateAsync(destProfile, ProfileSwitcher.TriggerSource.TrayMenu);
         }
     }
 
-    private void OnDeleteProfileClick(HostsProfile profile)
+    private async void OnDeleteProfileClick(HostsProfile profile)
     {
-        bool isActive = ProfileSwitcher.ActiveProfile == profile;
+        bool isActive = _profileSwitcher.ActiveProfile == profile;
 
         var prompt = isActive
             ? $"Delete profile '{profile.FileName}'?\n\nIt's currently active — the hosts file will be reset to the Windows default."
@@ -368,9 +388,9 @@ internal sealed class ProfilesMenuController
             // the grid/live hosts file showing an orphaned copy of content that no
             // longer corresponds to anything — reset to a well-defined state instead.
             if (isActive)
-                RestoreToDefault();
+                await RestoreToDefault();
 
-            HostsProfileList.Instance.Delete(profile);
+            _profileList.Delete(profile);
         }
     }
 
@@ -386,7 +406,7 @@ internal sealed class ProfilesMenuController
         HostsEntryList entries;
         try
         {
-            entries = new HostsEntryList(File.ReadAllLines(profile.FilePath), filterDefault: false);
+            entries = new HostsEntryList(new Utilities.UndoManager(), File.ReadAllLines(profile.FilePath), filterDefault: false);
         }
         catch (IOException ex)
         {
@@ -423,5 +443,83 @@ internal sealed class ProfilesMenuController
         g.FillRectangle(new SolidBrush(c), 0, 0, w, h);
         g.DrawRectangle(new Pen(Color.FromArgb(100, 0, 0, 0)), 0, 0, w - 1, h - 1);
         return bmp;
+    }
+
+    private void OnExportProfilesClick(object? sender, EventArgs e)
+    {
+        using var form = new ProfileExportForm(_profileList);
+        if (form.ShowDialog(_owner) != DialogResult.OK) return;
+        if (form.SelectedProfiles.Count == 0) return;
+
+        using var saveDialog = new SaveFileDialog
+        {
+            Title = "Export Profiles",
+            Filter = "Profile Package (*.zip)|*.zip",
+            DefaultExt = "zip",
+            FileName = "profiles-export"
+        };
+        if (saveDialog.ShowDialog(_owner) != DialogResult.OK) return;
+
+        try
+        {
+            var bundleConfigFor = form.BundleConfigFiles
+                ? form.SelectedProfiles
+                    .Where(p => p.Metadata?.HasConfigFile == true)
+                    .Select(p => p.FileName)
+                    .ToHashSet()
+                : (IReadOnlySet<string>)new HashSet<string>();
+
+            _exportImportService.Export(saveDialog.FileName, form.SelectedProfiles, bundleConfigFor);
+
+            MessageBox.Show(_owner,
+                $"Exported {form.SelectedProfiles.Count} profile(s) to:\n{saveDialog.FileName}",
+                _owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(_owner, $"Export failed:\n{ex.Message}", _owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void OnImportProfilesClick(object? sender, EventArgs e)
+    {
+        using var openDialog = new OpenFileDialog
+        {
+            Title = "Import Profiles",
+            Filter = "Profile Package (*.zip)|*.zip|All Files (*.*)|*.*"
+        };
+        if (openDialog.ShowDialog(_owner) != DialogResult.OK) return;
+
+        ProfileExportManifest manifest;
+        try
+        {
+            manifest = _exportImportService.ReadManifest(openDialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(_owner, $"Could not read package:\n{ex.Message}", _owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        using var importForm = new ProfileImportForm(manifest);
+        if (importForm.ShowDialog(_owner) != DialogResult.OK) return;
+        if (importForm.SelectedFileNames.Count == 0) return;
+
+        List<string> notes;
+        try
+        {
+            notes = _exportImportService.Import(openDialog.FileName, importForm.SelectedFileNames);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(_owner, $"Import failed:\n{ex.Message}", _owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        var successMsg = $"Imported {importForm.SelectedFileNames.Count} profile(s).";
+        if (notes.Count > 0)
+            successMsg += "\n\n" + string.Join("\n\n", notes);
+
+        MessageBox.Show(_owner, successMsg, _owner.Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 }

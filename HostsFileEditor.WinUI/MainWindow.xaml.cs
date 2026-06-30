@@ -1,4 +1,5 @@
 using HostsFileEditor.Services;
+using HostsFileEditor.Utilities;
 using HostsFileEditor.Win32;
 using Microsoft.UI;
 using Microsoft.UI.Composition;
@@ -29,6 +30,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsRemoveDefaultText { get; private set; }
 
+    public bool IsDiffBeforeSwitchEnabled { get; private set; }
+
     public GridLength ArchivesColumnWidth { get; private set; } = new(0);
 
     public bool IsArchiveVisible { get; private set; }
@@ -37,13 +40,49 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     public Visibility ArchivesEmptyVisibility => Archives.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>Bound to the "Profiles" MenuBarItem's Title, so the active profile is
+    /// visible at a glance without opening the menu.</summary>
+    public string ProfilesMenuTitle => _profileSwitcher.IsHostsDisabled
+        ? "Profiles: Disabled"
+        : _profileSwitcher.ActiveProfile is { IsDefault: false } active
+            ? $"Profiles: {active.FileName}"
+            : "Profiles: Default";
+
+    public Visibility TimerStatusVisibility =>
+        _rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+    public string TimerStatusText
+    {
+        get
+        {
+            var timer = _rollbackTimerService.ActiveTimer;
+            if (timer?.Status is not (RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed))
+                return string.Empty;
+
+            var expiry = timer.Status == RollbackTimerStatus.Snoozed ? (timer.SnoozeUntil ?? timer.ExpiresAt) : timer.ExpiresAt;
+            var remaining = expiry - DateTime.UtcNow;
+            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+
+            var countdown = remaining.TotalHours >= 1
+                ? $"{(int)remaining.TotalHours}h {remaining.Minutes:D2}m"
+                : remaining.TotalMinutes >= 1
+                    ? $"{(int)remaining.TotalMinutes}m {remaining.Seconds:D2}s"
+                    : $"{remaining.Seconds}s";
+
+            var snoozeSuffix = timer.Status == RollbackTimerStatus.Snoozed ? " (snoozed)" : string.Empty;
+            return $"⏱ Reverts in {countdown}{snoozeSuffix}";
+        }
+    }
+
     public Visibility MainViewVisibility => IsArchiveVisible ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility ArchiveViewVisibility => IsArchiveVisible ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility EntriesEmptyVisibility => HostsFile.Instance.Entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility EntriesEmptyVisibility => _hostsFile.Entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility EntriesFilteredVisibility => HostsFile.Instance.Entries.Count > 0 && Entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility EntriesFilteredVisibility => _hostsFile.Entries.Count > 0 && Entries.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsFilterCommentsHidden { get; private set; }
 
@@ -62,11 +101,45 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DialogService _dialogService;
     private readonly AnimationService _animationService;
     private readonly SelectionStateService _selectionService;
+    private readonly IHostsFile _hostsFile;
+    private readonly IUndoManager _undoManager;
+    private readonly IHostsProfileList _profileList;
+    private readonly IProfileSwitcher _profileSwitcher;
+    private readonly IHotkeyRegistry _hotkeyRegistry;
+    private readonly IRollbackTimerService _rollbackTimerService;
+    private readonly IAuditLogger _auditLogger;
+    private readonly IProfileExportImportService _exportImportService;
+    private HotkeyMessageHook? _hotkeyHook;
+    private DispatcherTimer? _timerCountdownTick;
 
-    public MainWindow(DialogService dialogService, AnimationService animationService)
+    public MainWindow(
+        DialogService dialogService, AnimationService animationService,
+        IHostsFile hostsFile, IUndoManager undoManager, IHostsProfileList profileList, IProfileSwitcher profileSwitcher,
+        IHotkeyRegistry hotkeyRegistry, IRollbackTimerService rollbackTimerService, IAuditLogger auditLogger,
+        IProfileExportImportService exportImportService)
     {
         _dialogService = dialogService ?? throw new ArgumentNullException(nameof(dialogService));
         _animationService = animationService ?? throw new ArgumentNullException(nameof(animationService));
+        _hostsFile = hostsFile;
+        _undoManager = undoManager;
+        _profileList = profileList;
+        _profileSwitcher = profileSwitcher;
+        _hotkeyRegistry = hotkeyRegistry;
+        _auditLogger = auditLogger;
+        _rollbackTimerService = rollbackTimerService;
+        _exportImportService = exportImportService;
+        _profileSwitcher.ProfileError = msg => { if (Content?.XamlRoot is { } root) _ = _dialogService.ShowErrorAsync(root, "Profile Error", msg); };
+        _profileSwitcher.DiffBeforeSwitch = ShowDiffPreviewAsync;
+        _hotkeyRegistry.HotkeyConflictNotify += OnHotkeyConflict;
+
+        _auditLogger.IntegrityFailed += OnAuditIntegrityFailed;
+        _auditLogger.LogError += OnAuditLogError;
+        Closed += (_, _) =>
+        {
+            _auditLogger.IntegrityFailed -= OnAuditIntegrityFailed;
+            _auditLogger.LogError -= OnAuditLogError;
+        };
+        _auditLogger.Initialize(); // after subscribing, so IntegrityFailed is handled
 
         InitializeComponent();
 
@@ -91,10 +164,64 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         TrySetAppWindowTitleBar();
         TryEnableMicaBackdrop();
         RefreshEntries();
+
+        // Subscribe before RestoreFromSettings() so the dropdown/active-profile label
+        // immediately reflect whatever it resolves — then refresh once more explicitly
+        // for the edge case where it finds no match and never raises the event.
+        _profileSwitcher.ActiveProfileChanged += OnActiveProfileChanged;
+        Closed += (_, _) => _profileSwitcher.ActiveProfileChanged -= OnActiveProfileChanged;
+        _profileSwitcher.RestoreFromSettings();
         RefreshArchives();
+
+        // WinUI has no Form.WndProc-style hook for WM_HOTKEY, so subclass the native
+        // window to catch it — same global hotkeys WinForm registers, shared via Core.
+        var hwnd = GetHwnd();
+        _hotkeyHook = new HotkeyMessageHook(hwnd, OnHotkeyPressed);
+        _hotkeyRegistry.Initialize(hwnd);
+        Closed += (_, _) =>
+        {
+            _hotkeyRegistry.UnregisterAll();
+            _hotkeyHook?.Dispose();
+        };
+
+        // RecoverFromRestart() must run before subscribing to Notification, so the
+        // auto-revert it may trigger (if the timer expired while the app was closed)
+        // doesn't fire that event before anyone's listening — PendingStartupNotification
+        // is checked explicitly afterward instead, showing it exactly once.
+        _rollbackTimerService.SetAuditLogger(_auditLogger);
+        var startupRevertMessage = _rollbackTimerService.RecoverFromRestart();
+        if (startupRevertMessage != null)
+            _profileSwitcher.SyncActiveAfterExternalWrite();
+
+        _rollbackTimerService.TimerExpired += OnRollbackTimerExpired;
+        _rollbackTimerService.Notification += OnRollbackNotification;
+        _rollbackTimerService.StateChanged += OnRollbackStateChanged;
+        Closed += (_, _) =>
+        {
+            _rollbackTimerService.TimerExpired -= OnRollbackTimerExpired;
+            _rollbackTimerService.Notification -= OnRollbackNotification;
+            _rollbackTimerService.StateChanged -= OnRollbackStateChanged;
+            _timerCountdownTick?.Stop();
+        };
+
+        _timerCountdownTick = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _timerCountdownTick.Tick += (_, _) => OnPropertyChanged(nameof(TimerStatusText));
+        RefreshTimerStatus();
+
+        if (_rollbackTimerService.PendingStartupNotification is { } notice)
+        {
+            // XamlRoot isn't available yet — the window hasn't been Activate()d by
+            // App.OnLaunched at this point in the constructor — so defer until it is.
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (Content?.XamlRoot is { } root)
+                    _ = _dialogService.ShowErrorAsync(root, "Rollback Timer", notice);
+            });
+        }
 
         IsPingIPs = LocalSettings.GetBool("AutoPingIPs", defaultValue: false);
         IsRemoveDefaultText = LocalSettings.GetBool("RemoveDefaultText", defaultValue: false);
+        IsDiffBeforeSwitchEnabled = LocalSettings.GetBool("DiffBeforeSwitchEnabled", defaultValue: false);
         IsArchiveVisible = LocalSettings.GetBool("ArchiveVisible", defaultValue: false);
         HostsEntry.AutoPingIPAddress = IsPingIPs;
         HostsFile.RemoveDefaultText = IsRemoveDefaultText;
@@ -110,22 +237,23 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFilterDisabledHidden));
         OnPropertyChanged(nameof(ActiveFilterCount));
         OnPropertyChanged(nameof(ActiveFiltersBadgeVisibility));
+        OnPropertyChanged(nameof(ProfilesMenuTitle));
 
         // Ensure buttons reflect current selection/state at startup
         _selectionService.UpdateSelectionDependentButtons();
         _selectionService.UpdateContextMenuItems();
 
         // Subscribe to undo history changes so we can update Undo/Redo visibility
-        Utilities.UndoManager.Instance.HistoryChanged += OnUndoHistoryChanged;
+        _undoManager.HistoryChanged += OnUndoHistoryChanged;
 
         // Subscribe to core entries changes so undo/redo of add/remove shows in UI
-        HostsFile.Instance.Entries.ListChanged += OnCoreEntriesListChanged;
+        _hostsFile.Entries.ListChanged += OnCoreEntriesListChanged;
 
         // Unsubscribe when window closes to avoid leaks
         Closed += (s, e) =>
         {
-            Utilities.UndoManager.Instance.HistoryChanged -= OnUndoHistoryChanged;
-            HostsFile.Instance.Entries.ListChanged -= OnCoreEntriesListChanged;
+            _undoManager.HistoryChanged -= OnUndoHistoryChanged;
+            _hostsFile.Entries.ListChanged -= OnCoreEntriesListChanged;
         };
     }
 
@@ -133,6 +261,209 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Use dispatcher to ensure UI-thread update and preserve selection when possible
         _ = DispatcherQueue.TryEnqueue(() => RefreshEntries(preserveSelection: true));
+    }
+
+    private void OnActiveProfileChanged()
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            OnPropertyChanged(nameof(ProfilesMenuTitle));
+            RefreshArchives();
+        });
+    }
+
+    // Raised from HotkeyMessageHook's native callback — not the UI thread, so hop
+    // back via the dispatcher before touching anything bound to the UI.
+    private void OnHotkeyPressed(int id)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            var profile = _hotkeyRegistry.GetProfileById(id);
+            if (profile != null)
+                _ = _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayHotkey);
+        });
+    }
+
+    private void OnHotkeyConflict(HostsProfile profile, HostsProfileMetadata metadata)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Content?.XamlRoot is { } root)
+                _ = _dialogService.ShowErrorAsync(root, "Hotkey Conflict", $"Could not register the hotkey for profile \"{profile.FileName}\" — it may already be in use by another application.");
+        });
+    }
+
+    private void OnAuditIntegrityFailed(object? sender, string message)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Content?.XamlRoot is { } root)
+                _ = _dialogService.ShowErrorAsync(root, "Audit Log Warning", message);
+        });
+    }
+
+    private void OnAuditLogError(object? sender, string message)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Content?.XamlRoot is { } root)
+                _ = _dialogService.ShowErrorAsync(root, "Audit Log Error", message);
+        });
+    }
+
+    // ── Rollback timer ───────────────────────────────────────────────────────
+
+    private void RefreshTimerStatus()
+    {
+        OnPropertyChanged(nameof(TimerStatusVisibility));
+        OnPropertyChanged(nameof(TimerStatusText));
+
+        bool isActive = _rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed;
+        if (isActive)
+            _timerCountdownTick?.Start();
+        else
+            _timerCountdownTick?.Stop();
+
+        RefreshTimerStatusFlyout();
+    }
+
+    private void RefreshTimerStatusFlyout()
+    {
+        if (TimerStatusFlyout is null) return;
+
+        TimerStatusFlyout.Items.Clear();
+
+        void AddSnooze(string label, TimeSpan duration)
+        {
+            var item = new MenuFlyoutItem { Text = label };
+            item.Click += (_, _) => _rollbackTimerService.Snooze(duration);
+            TimerStatusFlyout.Items.Add(item);
+        }
+
+        AddSnooze("Snooze 15 Minutes", TimeSpan.FromMinutes(15));
+        AddSnooze("Snooze 30 Minutes", TimeSpan.FromMinutes(30));
+        AddSnooze("Snooze 1 Hour", TimeSpan.FromHours(1));
+        AddSnooze("Snooze 2 Hours", TimeSpan.FromHours(2));
+        TimerStatusFlyout.Items.Add(new MenuFlyoutSeparator());
+
+        var cancelItem = new MenuFlyoutItem { Text = "Cancel Timer — Keep Permanently" };
+        cancelItem.Click += async (_, _) =>
+        {
+            var profileName = _rollbackTimerService.ActiveTimer?.ActivatedProfileName ?? string.Empty;
+            if (Content?.XamlRoot is not { } root) return;
+
+            var confirmed = await _dialogService.ShowConfirmationAsync(
+                root, "Cancel Rollback Timer",
+                $"Keep \"{profileName}\" as the active configuration permanently?\nThe rollback timer will be cancelled.");
+            if (confirmed)
+                _rollbackTimerService.CancelTimer();
+        };
+        TimerStatusFlyout.Items.Add(cancelItem);
+    }
+
+    private void OnRollbackStateChanged(object? sender, EventArgs e)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            RefreshTimerStatus();
+            RefreshProfileSwitcher();
+        });
+    }
+
+    private void OnRollbackNotification(object? sender, string message)
+    {
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (Content?.XamlRoot is { } root)
+                _ = _dialogService.ShowErrorAsync(root, "Rollback Timer", message);
+        });
+    }
+
+    private void OnRollbackTimerExpired(object? sender, RollbackTimer timer)
+    {
+        _ = DispatcherQueue.TryEnqueue(async () =>
+        {
+            if (Content?.XamlRoot is not { } root) return;
+
+            bool externallyModified =
+                File.Exists(HostsFile.DefaultHostFilePath) &&
+                File.GetLastWriteTimeUtc(HostsFile.DefaultHostFilePath) > timer.ActivatedAt;
+
+            var result = await _dialogService.ShowRollbackExpiryAsync(root, timer.ActivatedProfileName, timer.ActivatedAt, externallyModified);
+
+            switch (result.Choice)
+            {
+                case RollbackExpiryChoice.Revert:
+                    _rollbackTimerService.ExecuteRevert(autoReverted: result.WasAutoReverted);
+                    _profileSwitcher.SyncActiveAfterExternalWrite();
+                    break;
+                case RollbackExpiryChoice.Snooze:
+                    _rollbackTimerService.Snooze(TimeSpan.FromMinutes(30));
+                    break;
+                case RollbackExpiryChoice.Keep:
+                    _rollbackTimerService.CancelTimer();
+                    break;
+            }
+
+            _profileList.Refresh();
+        });
+    }
+
+    private async void OnArchiveTimerClick(object sender, RoutedEventArgs e)
+    {
+        if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        if (Content?.XamlRoot is not { } root) return;
+
+        if (_rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed)
+        {
+            var confirmed = await _dialogService.ShowConfirmationAsync(
+                root, "Rollback Timer Already Active",
+                $"A rollback timer is already active for profile '{_rollbackTimerService.ActiveTimer.ActivatedProfileName}'.\nCancel it and start a new one?");
+            if (!confirmed) return;
+            _rollbackTimerService.CancelTimer();
+        }
+
+        var duration = await _dialogService.ShowTimerDurationAsync(root);
+        if (duration is null) return;
+
+        await _rollbackTimerService.StartAsync(profile.FileName, duration.Value, () => _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu));
+    }
+
+    /// <summary>
+    /// Wired into <see cref="IProfileSwitcher.DiffBeforeSwitch"/> — ActivateAsync only
+    /// calls this when the "Show Diff Before Switching Profiles" setting is on, so no
+    /// need to re-check it here (unlike WinForm's gate, which redundantly does).
+    /// </summary>
+    private async Task<bool> ShowDiffPreviewAsync(HostsProfile profile)
+    {
+        if (Content?.XamlRoot is not { } root) return true;
+
+        if (!File.Exists(profile.FilePath))
+        {
+            await _dialogService.ShowErrorAsync(root, "Profile Error", $"Profile file not found:\n{profile.FilePath}");
+            return false;
+        }
+
+        HostsEntryList incoming;
+        try
+        {
+            incoming = new HostsEntryList(new UndoManager(), File.ReadAllLines(profile.FilePath), filterDefault: false);
+        }
+        catch (IOException ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Profile Error", $"Could not read profile:\n{ex.Message}");
+            return false;
+        }
+
+        var diff = ProfileDiff.Compute(_hostsFile.Entries, incoming);
+
+        if (diff.IsEmpty)
+        {
+            // No DNS changes — allow the switch, just skip the dialog.
+            return true;
+        }
+
+        return await _dialogService.ShowProfileDiffAsync(root, profile.FileName, diff);
     }
 
     private void TrySetAppWindowTitleBar()
@@ -230,7 +561,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             var path = Win32FileDialogs.OpenFileDialog(GetHwnd(), "All Files (*.*)|*.*");
             if (!string.IsNullOrWhiteSpace(path))
             {
-                HostsFile.Instance.Import(path);
+                _hostsFile.Import(path);
+                _auditLogger.Log(AuditActionType.FileImported, AuditSource.MainForm, new AuditDetail { SourcePath = path });
                 RefreshEntries();
             }
         }
@@ -240,7 +572,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnSaveClick(object sender, RoutedEventArgs e) => HostsFile.Instance.Save();
+    private void OnSaveClick(object sender, RoutedEventArgs e) => _hostsFile.Save();
 
     private void OnSaveAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
         => TryInvokeUnlessTextBox(() => OnSaveClick(this, new RoutedEventArgs()), args);
@@ -252,7 +584,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             var path = Win32FileDialogs.SaveFileDialog(GetHwnd(), "hosts", "Hosts (*.txt;*.hosts)|*.txt;*.hosts|Text (*.txt)|*.txt|All Files (*.*)|*.*");
             if (!string.IsNullOrWhiteSpace(path))
             {
-                HostsFile.Instance.SaveAs(path);
+                _hostsFile.SaveAs(path);
             }
         }
         catch (Exception ex)
@@ -266,7 +598,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var current = EntriesList.SelectedItems.Cast<HostsEntry>().FirstOrDefault();
         if (current != null)
         {
-            HostsFile.Instance.Entries.InsertAfter(current);
+            _hostsFile.Entries.InsertAfter(current);
             RefreshEntries(true);
         }
     }
@@ -276,24 +608,24 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var current = EntriesList.SelectedItems.Cast<HostsEntry>().FirstOrDefault();
         if (current != null)
         {
-            HostsFile.Instance.Entries.InsertBefore(current);
+            _hostsFile.Entries.InsertBefore(current);
             RefreshEntries(true);
         }
     }
 
     private void OnAddToTop(object sender, RoutedEventArgs e)
     {
-        var first = HostsFile.Instance.Entries.FirstOrDefault();
+        var first = _hostsFile.Entries.FirstOrDefault();
         if (first != null)
         {
-            HostsFile.Instance.Entries.InsertBefore(first);
+            _hostsFile.Entries.InsertBefore(first);
         }
         else
         {
-            HostsFile.Instance.Entries.Add();
+            _hostsFile.Entries.Add();
         }
 
-        Entries.Insert(0, HostsFile.Instance.Entries.First());
+        Entries.Insert(0, _hostsFile.Entries.First());
         OnPropertyChanged(nameof(EntriesEmptyVisibility));
         OnPropertyChanged(nameof(EntriesFilteredVisibility));
     }
@@ -302,7 +634,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (EntriesList.SelectedItems.Count > 0 && EntriesList.SelectedItem is HostsEntry lastSel)
         {
-            HostsFile.Instance.Entries.MoveBefore(EntriesList.SelectedItems.Cast<HostsEntry>(), lastSel);
+            _hostsFile.Entries.MoveBefore(EntriesList.SelectedItems.Cast<HostsEntry>(), lastSel);
             RefreshEntries(true);
         }
     }
@@ -311,7 +643,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (EntriesList.SelectedItems.Count > 0 && EntriesList.SelectedItem is HostsEntry firstSel)
         {
-            HostsFile.Instance.Entries.MoveAfter(EntriesList.SelectedItems.Cast<HostsEntry>(), firstSel);
+            _hostsFile.Entries.MoveAfter(EntriesList.SelectedItems.Cast<HostsEntry>(), firstSel);
             RefreshEntries(true);
         }
     }
@@ -321,7 +653,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var items = EntriesList.SelectedItems.Cast<HostsEntry>().ToList();
         if (items.Count > 0)
         {
-            HostsFile.Instance.Entries.Remove(items);
+            _hostsFile.Entries.Remove(items);
             foreach (var i in items)
             {
                 Entries.Remove(i);
@@ -350,7 +682,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         if (rows.Count > 0)
         {
             _clipboardEntries = [.. rows.Select(r => new HostsEntry(r))];
-            HostsFile.Instance.Entries.Remove(rows);
+            _hostsFile.Entries.Remove(rows);
             foreach (var r in rows)
             {
                 Entries.Remove(r);
@@ -369,7 +701,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         if (_clipboardEntries != null && EntriesList.SelectedItems.Count > 0)
         {
             var current = (HostsEntry)EntriesList.SelectedItem;
-            HostsFile.Instance.Entries.Insert(current, _clipboardEntries);
+            _hostsFile.Entries.Insert(current, _clipboardEntries);
             RefreshEntries();
             _clipboardEntries = null;
         }
@@ -384,13 +716,13 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             foreach (var entry in rows)
             {
-                HostsFile.Instance.Entries.InsertAfter(entry, new HostsEntry(entry));
+                _hostsFile.Entries.InsertAfter(entry, new HostsEntry(entry));
             }
             RefreshEntries(true);
         }
         else if (EntriesList.SelectedItem is HostsEntry current)
         {
-            HostsFile.Instance.Entries.InsertAfter(current, new HostsEntry(current));
+            _hostsFile.Entries.InsertAfter(current, new HostsEntry(current));
             RefreshEntries(true);
         }
     }
@@ -403,14 +735,14 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         var confirmed = await ShowConfirmationAsync("Reload hosts file?", "You will lose any unsaved changes. Continue?");
         if (confirmed)
         {
-            HostsFile.Instance.Refresh();
+            _hostsFile.Refresh();
             RefreshEntries();
         }
     }
 
     private void OnRestoreClick(object sender, RoutedEventArgs e)
     {
-        HostsFile.Instance.RestoreDefault();
+        _hostsFile.RestoreDefault();
         RefreshEntries();
     }
 
@@ -466,18 +798,18 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             // If all selected are enabled, then uncheck; otherwise check
             var allEnabled = rows.All(r => r.Enabled);
-            HostsFile.Instance.Entries.SetEnabled(rows, isEnabled: !allEnabled);
+            _hostsFile.Entries.SetEnabled(rows, isEnabled: !allEnabled);
         }
         else if (EntriesList.SelectedItem is HostsEntry current)
         {
             // Toggle single selection
-            HostsFile.Instance.Entries.SetEnabled([current], isEnabled: !current.Enabled);
+            _hostsFile.Entries.SetEnabled([current], isEnabled: !current.Enabled);
         }
     }
 
-    private void OnUndoClick(object sender, RoutedEventArgs e) => Utilities.UndoManager.Instance.Undo();
+    private void OnUndoClick(object sender, RoutedEventArgs e) => _undoManager.Undo();
 
-    private void OnRedoClick(object sender, RoutedEventArgs e) => Utilities.UndoManager.Instance.Redo();
+    private void OnRedoClick(object sender, RoutedEventArgs e) => _undoManager.Redo();
 
     private void OnUndoAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
@@ -486,7 +818,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        Utilities.UndoManager.Instance.Undo();
+        _undoManager.Undo();
         args.Handled = true;
     }
 
@@ -497,39 +829,106 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        Utilities.UndoManager.Instance.Redo();
+        _undoManager.Redo();
         args.Handled = true;
     }
 
     private async void OnArchiveClick(object sender, RoutedEventArgs e)
     {
         var name = _dialogService is not null
-            ? await _dialogService.ShowInputAsync(Content.XamlRoot, "Create Archive", "Archive name", "OK", "Cancel")
+            ? await _dialogService.ShowInputAsync(Content.XamlRoot, "Save Current as Profile", "Profile name", "OK", "Cancel")
             : null;
 
         if (!string.IsNullOrWhiteSpace(name))
         {
-            HostsFile.Instance.SaveAsProfile(name.Trim());
+            _hostsFile.SaveAsProfile(name.Trim());
             RefreshArchives();
         }
     }
 
-    private void OnArchiveLoadClick(object sender, RoutedEventArgs e)
+    private async void OnNewEmptyProfileClick(object sender, RoutedEventArgs e)
+    {
+        var name = _dialogService is not null
+            ? await _dialogService.ShowInputAsync(Content.XamlRoot, "New Empty Profile", "Profile name", "OK", "Cancel")
+            : null;
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        var profile = new HostsProfile(name.Trim());
+        Directory.CreateDirectory(HostsProfileList.ProfileDirectory);
+        File.WriteAllLines(profile.FilePath, HostsEntryList.DefaultLines);
+        _profileList.Add(profile);
+
+        RefreshArchives();
+    }
+
+    private async void OnArchiveLoadClick(object sender, RoutedEventArgs e)
     {
         if (ArchiveList.SelectedItem is HostsProfile archive)
         {
-            HostsFile.Instance.Import(archive.FilePath);
+            await _profileSwitcher.ActivateAsync(archive, ProfileSwitcher.TriggerSource.TrayMenu);
             RefreshEntries();
         }
     }
 
-    private void OnArchiveDeleteClick(object sender, RoutedEventArgs e)
+    private async void OnArchiveDeleteClick(object sender, RoutedEventArgs e)
     {
         if (ArchiveList.SelectedItem is HostsProfile archive)
         {
-            HostsProfileList.Instance.Delete(archive);
+            if (archive.IsDefault) return; // Default can't be deleted, mirrors WinForm
+
+            bool wasActive = _profileSwitcher.ActiveProfile == archive;
+
+            _profileList.Delete(archive);
             RefreshArchives();
+
+            // Deleting the file out from under the active profile would otherwise leave
+            // the grid showing an orphaned copy of content that no longer corresponds to
+            // anything — reset to Default instead.
+            if (wasActive)
+            {
+                var defaultProfile = _profileList.FirstOrDefault(p => p.IsDefault);
+                if (defaultProfile != null)
+                    await _profileSwitcher.ActivateAsync(defaultProfile, ProfileSwitcher.TriggerSource.TrayMenu);
+            }
         }
+    }
+
+    private async void OnArchiveSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        if (Content?.XamlRoot is not { } root) return;
+
+        var metadata = profile.Metadata;
+        var result = await _dialogService.ShowProfileSettingsAsync(
+            root, GetHwnd(), profile.FileName, metadata?.Description ?? string.Empty, metadata?.Color ?? string.Empty, metadata?.SortOrder ?? 0,
+            metadata?.HotkeyModifiers ?? 0, metadata?.HotkeyKey ?? 0,
+            metadata?.ConfigSourcePath ?? string.Empty, metadata?.ConfigDestinationPath ?? string.Empty);
+
+        if (result is null) return;
+
+        // Attempt the registration now, so a conflict — with another profile or some
+        // other application's global hotkey — is reported right here instead of via
+        // a notification after this dialog has already closed.
+        if (!_hotkeyRegistry.TryAssignHotkey(profile, result.HotkeyModifiers, result.HotkeyKey, out var error))
+        {
+            await _dialogService.ShowErrorAsync(root, "Hotkey Conflict", error ?? "Could not assign that hotkey.");
+            return;
+        }
+
+        var meta = metadata ?? new HostsProfileMetadata();
+        meta.Name = profile.FileName;
+        meta.Description = result.Description;
+        meta.Color = result.Color;
+        meta.SortOrder = result.SortOrder;
+        meta.HotkeyModifiers = result.HotkeyKey == 0 ? 0 : result.HotkeyModifiers;
+        meta.HotkeyKey = result.HotkeyKey;
+        meta.ConfigSourcePath = result.ConfigSourcePath;
+        meta.ConfigDestinationPath = result.ConfigDestinationPath;
+        meta.Save(profile.FilePath);
+        profile.ReloadMetadata();
+
+        RefreshArchives();
     }
 
     private async void OnViewArchiveClick(object sender, RoutedEventArgs e)
@@ -577,7 +976,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         // 3. Build target filtered list
         var newList = new List<HostsEntry>();
-        foreach (var e in HostsFile.Instance.Entries)
+        foreach (var e in _hostsFile.Entries)
         {
             if (IsFilterCommentsHidden && e.HasCommentOnly)
                 continue;
@@ -683,11 +1082,158 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshArchives()
     {
         Archives.Clear();
-        foreach (var a in HostsProfileList.Instance)
+        foreach (var a in _profileList.OrderBy(p => p.Metadata?.SortOrder ?? 0).ThenBy(p => p.FileName))
         {
             Archives.Add(a);
         }
         OnPropertyChanged(nameof(ArchivesEmptyVisibility));
+        RefreshProfileSwitcher();
+    }
+
+    /// <summary>
+    /// Rebuilds the always-visible "Profiles" top-level menu — the quick way to
+    /// switch profiles without opening the Profiles management panel.
+    /// </summary>
+    private void RefreshProfileSwitcher()
+    {
+        if (ProfilesMenuBarItem is null) return;
+
+        var items = ProfilesMenuBarItem.Items;
+        items.Clear();
+
+        var saveCurrentItem = new MenuFlyoutItem { Text = "Save Current as Profile…" };
+        saveCurrentItem.Click += OnArchiveClick;
+        items.Add(saveCurrentItem);
+
+        var newEmptyItem = new MenuFlyoutItem { Text = "New Empty Profile…" };
+        newEmptyItem.Click += OnNewEmptyProfileClick;
+        items.Add(newEmptyItem);
+
+        var exportItem = new MenuFlyoutItem { Text = "Export Profiles…" };
+        exportItem.Click += OnExportProfilesClick;
+        items.Add(exportItem);
+
+        var importItem = new MenuFlyoutItem { Text = "Import Profiles…" };
+        importItem.Click += OnImportProfilesClick;
+        items.Add(importItem);
+
+        items.Add(new MenuFlyoutSeparator());
+
+        var defaultProfile = Archives.FirstOrDefault(p => p.IsDefault);
+        bool isDefaultActive = defaultProfile != null && _profileSwitcher.ActiveProfile == defaultProfile && !_profileSwitcher.IsHostsDisabled;
+        if (defaultProfile != null)
+        {
+            items.Add(BuildProfileSwitcherItem(defaultProfile, isDefaultActive));
+            items.Add(new MenuFlyoutSeparator());
+        }
+
+        foreach (var profile in Archives.Where(p => !p.IsDefault))
+        {
+            bool isActive = _profileSwitcher.ActiveProfile == profile && !_profileSwitcher.IsHostsDisabled;
+            items.Add(BuildProfileSwitcherItem(profile, isActive));
+        }
+
+        items.Add(new MenuFlyoutSeparator());
+        var disableItem = new ToggleMenuFlyoutItem { Text = "Hosts File Disabled", IsChecked = _profileSwitcher.IsHostsDisabled };
+        disableItem.Click += OnHostsDisabledToggleClick;
+        items.Add(disableItem);
+    }
+
+    private RadioMenuFlyoutItem BuildProfileSwitcherItem(HostsProfile profile, bool isActive)
+    {
+        var item = new RadioMenuFlyoutItem
+        {
+            Text = profile.IsDefault ? "Default" : profile.FileName,
+            GroupName = "ProfileSwitcher",
+            IsChecked = isActive
+        };
+        item.Click += async (_, _) => await _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu);
+        return item;
+    }
+
+    private async void OnHostsDisabledToggleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleMenuFlyoutItem { IsChecked: true })
+        {
+            // Unchecked — fall back to Default, mirroring WinForm's behavior
+            var defaultProfile = Archives.FirstOrDefault(p => p.IsDefault);
+            if (defaultProfile != null)
+                await _profileSwitcher.ActivateAsync(defaultProfile, ProfileSwitcher.TriggerSource.TrayMenu);
+            return;
+        }
+
+        _profileSwitcher.DisableAll();
+        _auditLogger.Log(AuditActionType.HostsFileDisabled, AuditSource.MainForm);
+    }
+
+    private async void OnExportProfilesClick(object sender, RoutedEventArgs e)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+
+        var result = await _dialogService.ShowExportProfilesAsync(root, _profileList);
+        if (result is null || result.SelectedProfiles.Count == 0) return;
+
+        var zipPath = Win32FileDialogs.SaveFileDialog(GetHwnd(), "profiles-export", "Profile Package (*.zip)|*.zip");
+        if (string.IsNullOrWhiteSpace(zipPath)) return;
+
+        try
+        {
+            var bundleConfigFor = result.BundleConfigFiles
+                ? (IReadOnlySet<string>)result.SelectedProfiles
+                    .Where(p => p.Metadata?.HasConfigFile == true)
+                    .Select(p => p.FileName)
+                    .ToHashSet()
+                : new HashSet<string>();
+
+            _exportImportService.Export(zipPath, result.SelectedProfiles, bundleConfigFor);
+            await _dialogService.ShowErrorAsync(root, "Export Complete",
+                $"Exported {result.SelectedProfiles.Count} profile(s) to:\n{zipPath}");
+        }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Export Failed", ex.Message);
+        }
+    }
+
+    private async void OnImportProfilesClick(object sender, RoutedEventArgs e)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+
+        var zipPath = Win32FileDialogs.OpenFileDialog(GetHwnd(), "Profile Package (*.zip)|*.zip|All Files (*.*)|*.*");
+        if (string.IsNullOrWhiteSpace(zipPath)) return;
+
+        ProfileExportManifest manifest;
+        try
+        {
+            manifest = _exportImportService.ReadManifest(zipPath);
+        }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Import Failed", $"Could not read package:\n{ex.Message}");
+            return;
+        }
+
+        var fileNamesToImport = await _dialogService.ShowImportProfilesAsync(root, manifest);
+        if (fileNamesToImport is null || fileNamesToImport.Count == 0) return;
+
+        List<string> notes;
+        try
+        {
+            notes = _exportImportService.Import(zipPath, fileNamesToImport);
+        }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Import Failed", ex.Message);
+            return;
+        }
+
+        RefreshArchives();
+
+        var successMsg = $"Imported {fileNamesToImport.Count} profile(s).";
+        if (notes.Count > 0)
+            successMsg += "\n\n" + string.Join("\n\n", notes);
+
+        await _dialogService.ShowErrorAsync(root, "Import Complete", successMsg);
     }
 
     private void OnPropertyChanged(string propertyName)
@@ -716,6 +1262,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private void OnRemoveDefaultTextClick(object sender, RoutedEventArgs e) =>
         ApplyToggleSetting("RemoveDefaultText", v => { IsRemoveDefaultText = v; HostsFile.RemoveDefaultText = v; }, nameof(IsRemoveDefaultText), sender);
 
+    private void OnDiffBeforeSwitchClick(object sender, RoutedEventArgs e) =>
+        ApplyToggleSetting("DiffBeforeSwitchEnabled", v => IsDiffBeforeSwitchEnabled = v, nameof(IsDiffBeforeSwitchEnabled), sender);
+
     private void OnUndoHistoryChanged(object? sender, EventArgs e) =>
         _ = DispatcherQueue.TryEnqueue(() => _selectionService.UpdateContextMenuItems());
 
@@ -729,9 +1278,12 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (ArchiveList is not null)
         {
-            var hasSelection = ArchiveList.SelectedItem is HostsProfile;
-            if (ArchiveLoadButton is not null) ArchiveLoadButton.IsEnabled = hasSelection;
-            if (ArchiveDeleteButton is not null) ArchiveDeleteButton.IsEnabled = hasSelection;
+            var selected = ArchiveList.SelectedItem as HostsProfile;
+            bool isActive = selected != null && _profileSwitcher.ActiveProfile == selected && !_profileSwitcher.IsHostsDisabled;
+            if (ArchiveLoadButton is not null) ArchiveLoadButton.IsEnabled = selected is not null;
+            if (ArchiveTimerButton is not null) ArchiveTimerButton.IsEnabled = selected is not null && !isActive;
+            if (ArchiveDeleteButton is not null) ArchiveDeleteButton.IsEnabled = selected is { IsDefault: false };
+            if (ArchiveSettingsButton is not null) ArchiveSettingsButton.IsEnabled = selected is not null;
         }
     }
 }

@@ -3,28 +3,48 @@ using System.Runtime.InteropServices;
 
 namespace HostsFileEditor;
 
-internal static class HotkeyRegistry
+/// <summary>
+/// Shared between WinForm and WinUI — moved into Core since its logic (a hotkey-id
+/// to profile map, backed by raw RegisterHotKey/UnregisterHotKey calls against
+/// whatever HWND the host UI hands it) has no WinForms-specific dependencies.
+/// Each UI is still responsible for catching WM_HOTKEY itself and calling
+/// <see cref="GetProfileById"/> — WinForms via <c>Form.WndProc</c>, WinUI via a
+/// window-message subclass (see WinUI's HotkeyMessageHook).
+/// </summary>
+public sealed class HotkeyRegistry : IHotkeyRegistry
 {
-    private static IntPtr _hwnd = IntPtr.Zero;
-    private static readonly Dictionary<int, HostsProfile> _idToProfile = [];
-    private static int _nextId = 1;
+    private static readonly Lazy<HotkeyRegistry> _instance =
+        new(() => new HotkeyRegistry(HostsProfileList.Instance));
 
-    public static void Initialize(IntPtr hwnd)
+    public static HotkeyRegistry Instance => _instance.Value;
+
+    private readonly IHostsProfileList _profileList;
+
+    private IntPtr _hwnd = IntPtr.Zero;
+    private readonly Dictionary<int, HostsProfile> _idToProfile = [];
+    private int _nextId = 1;
+
+    private HotkeyRegistry(IHostsProfileList profileList)
+    {
+        _profileList = profileList;
+    }
+
+    public void Initialize(IntPtr hwnd)
     {
         _hwnd = hwnd;
         RegisterAll();
     }
 
-    public static void RegisterAll()
+    public void RegisterAll()
     {
         UnregisterAll();
-        foreach (var profile in HostsProfileList.Instance)
+        foreach (var profile in _profileList)
         {
             Register(profile);
         }
     }
 
-    public static void Register(HostsProfile profile)
+    public void Register(HostsProfile profile)
     {
         var metadata = profile.Metadata;
         if (metadata == null || !metadata.HasHotkey)
@@ -51,7 +71,7 @@ internal static class HotkeyRegistry
         }
     }
 
-    public static void Unregister(HostsProfile profile)
+    public void Unregister(HostsProfile profile)
     {
         var pair = _idToProfile.FirstOrDefault(kv => kv.Value == profile);
         if (pair.Value != null)
@@ -61,7 +81,7 @@ internal static class HotkeyRegistry
         }
     }
 
-    public static void UnregisterAll()
+    public void UnregisterAll()
     {
         foreach (var id in _idToProfile.Keys)
         {
@@ -70,10 +90,10 @@ internal static class HotkeyRegistry
         _idToProfile.Clear();
     }
 
-    public static HostsProfile? GetProfileById(int id) =>
+    public HostsProfile? GetProfileById(int id) =>
         _idToProfile.TryGetValue(id, out var profile) ? profile : null;
 
-    public static bool IsChordTaken(int modifiers, int key, HostsProfile? excludeProfile = null) =>
+    public bool IsChordTaken(int modifiers, int key, HostsProfile? excludeProfile = null) =>
         _idToProfile.Values.Any(a =>
             a != excludeProfile &&
             a.Metadata?.HotkeyModifiers == modifiers &&
@@ -86,7 +106,7 @@ internal static class HotkeyRegistry
     /// later via <see cref="HotkeyConflictNotify"/> after the fact. Passing key=0 clears the
     /// profile's hotkey. On failure, any previous registration for this profile is restored.
     /// </summary>
-    public static bool TryAssignHotkey(HostsProfile profile, int modifiers, int key, out string? error)
+    public bool TryAssignHotkey(HostsProfile profile, int modifiers, int key, out string? error)
     {
         error = null;
 
@@ -139,5 +159,5 @@ internal static class HotkeyRegistry
     }
 
     // Raised when a hotkey registration fails due to a system conflict
-    public static event Action<HostsProfile, HostsProfileMetadata>? HotkeyConflictNotify;
+    public event Action<HostsProfile, HostsProfileMetadata>? HotkeyConflictNotify;
 }

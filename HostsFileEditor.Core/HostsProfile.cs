@@ -89,6 +89,11 @@ public class HostsProfile
         _metadata = null;
     }
 
+    /// <summary>Lets WinUI's x:Bind pass the whole profile into a static helper function.</summary>
+    public HostsProfile Self => this;
+
+    public string DisplayDescription => Metadata?.Description ?? string.Empty;
+
     public static bool Validate(string filePath, out string error)
     {
         var isValid = false;

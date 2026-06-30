@@ -25,27 +25,50 @@ public class HostsFile : IHostsFile
     // Internal test hook: override backup file path so unit tests do not need elevated permissions
     internal static string? TestBackupHostFilePathOverride { get; set; }
 
-    private static readonly Lazy<HostsFile> _instance =
-        new(() =>
-        {
-            UndoManager.Instance.ClearHistory();
+    private static IUndoManager? _configuredUndoManager;
+    private static IHostsProfileList? _configuredProfileList;
 
-            return new HostsFile(DefaultHostFilePath);
-        });
+    private static readonly Lazy<HostsFile> _instance =
+        new(() => new HostsFile(
+            DefaultHostFilePath,
+            _configuredUndoManager ?? UndoManager.Instance,
+            _configuredProfileList ?? HostsProfileList.Instance));
+
+    /// <summary>
+    /// Composition roots call this before anything touches <see cref="Instance"/> to supply
+    /// the undo manager and profile list explicitly, so <see cref="HostsEntryList"/>/<see
+    /// cref="HostsEntry"/>/<see cref="SaveAsProfile"/> all operate against the exact same
+    /// instances the rest of the app uses. Falls back to <see cref="Utilities.UndoManager.Instance"/>
+    /// and <see cref="HostsProfileList.Instance"/> automatically if never called (e.g. in unit
+    /// tests, or WinUI which still references those singletons directly).
+    /// </summary>
+    public static void Configure(IUndoManager undoManager, IHostsProfileList profileList)
+    {
+        _configuredUndoManager = undoManager;
+        _configuredProfileList = profileList;
+    }
 
     private readonly string _filePath;
+
+    private readonly IUndoManager _undoManager;
+
+    private readonly IHostsProfileList _profileList;
 
     // The disk content as of the last load/save through this app — used to detect
     // edits made outside the app (e.g. a text editor) before they get clobbered.
     private string[] _lastKnownDiskLines = [];
 
-    private HostsFile(string filePath)
+    private HostsFile(string filePath, IUndoManager undoManager, IHostsProfileList profileList)
     {
         _filePath = filePath;
+        _undoManager = undoManager;
+        _profileList = profileList;
+
+        _undoManager.ClearHistory();
 
         if (!File.Exists(filePath))
         {
-            Entries = [];
+            Entries = new HostsEntryList(_undoManager);
         }
         else
         {
@@ -56,7 +79,7 @@ public class HostsFile : IHostsFile
             }
 
             var lines = File.ReadAllLines(filePath);
-            Entries = new HostsEntryList(lines, RemoveDefaultText);
+            Entries = new HostsEntryList(_undoManager, lines, RemoveDefaultText);
             _lastKnownDiskLines = lines;
         }
 
@@ -119,12 +142,12 @@ public class HostsFile : IHostsFile
     {
         var profile = new HostsProfile(name);
         SaveAs(profile.FilePath);
-        HostsProfileList.Instance.Add(profile);
+        _profileList.Add(profile);
     }
 
     public void RestoreDefault()
     {
-        UndoManager.Instance.ClearHistory();
+        _undoManager.ClearHistory();
 
         Entries.BatchUpdate(() =>
         {
@@ -144,7 +167,7 @@ public class HostsFile : IHostsFile
     /// </summary>
     public void DisableAll()
     {
-        UndoManager.Instance.ClearHistory();
+        _undoManager.ClearHistory();
 
         if (File.Exists(DefaultHostFilePath))
         {
@@ -231,7 +254,7 @@ public class HostsFile : IHostsFile
 
     public void Refresh(bool removeDefault = true)
     {
-        UndoManager.Instance.ClearHistory();
+        _undoManager.ClearHistory();
 
         var lines = File.ReadAllLines(_filePath);
 

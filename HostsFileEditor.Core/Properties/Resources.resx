@@ -89,4 +89,7 @@
   <data name="UnknownException" xml:space="preserve">
     <value>Unknown exception occurred</value>
   </data>
+  <data name="ProfileFileNotFound" xml:space="preserve">
+    <value>Profile '{0}' file not found on disk.</value>
+  </data>
 </root>

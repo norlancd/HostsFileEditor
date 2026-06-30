@@ -7,14 +7,14 @@ public class HostsEntryListTests
     public void AddLines_SkipDefault()
     {
         var lines = new []{"127.0.0.1 localhost", "::1 localhost"};
-        var list = new HostsEntryList(lines, filterDefault: false);
+        var list = new HostsEntryList(new UndoManager(), lines, filterDefault: false);
         list.Count.ShouldBe(lines.Length);
     }
 
     [TestMethod]
     public void Add_AddsBlankEntry()
     {
-        var list = new HostsEntryList();
+        var list = new HostsEntryList(new UndoManager());
         list.Add();
         list.Count.ShouldBe(1);
     }
@@ -22,10 +22,11 @@ public class HostsEntryListTests
     [TestMethod]
     public void MoveBefore_MovesEntries()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
-        var b = new HostsEntry("127.0.0.1 b");
-        var c = new HostsEntry("127.0.0.1 c");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
+        var b = new HostsEntry(undoManager, "127.0.0.1 b");
+        var c = new HostsEntry(undoManager, "127.0.0.1 c");
         list.Add(a);
         list.Add(b);
         list.Add(c);
@@ -38,10 +39,11 @@ public class HostsEntryListTests
     [TestMethod]
     public void MoveAfter_MovesEntries()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
-        var b = new HostsEntry("127.0.0.1 b");
-        var c = new HostsEntry("127.0.0.1 c");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
+        var b = new HostsEntry(undoManager, "127.0.0.1 b");
+        var c = new HostsEntry(undoManager, "127.0.0.1 c");
         list.Add(a);
         list.Add(b);
         list.Add(c);
@@ -53,8 +55,9 @@ public class HostsEntryListTests
     [TestMethod]
     public void SetEnabled_DisablesEntries()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
         list.Add(a);
         list.SetEnabled(new[]{a}, false);
         a.Enabled.ShouldBeFalse();
@@ -63,29 +66,32 @@ public class HostsEntryListTests
     [TestMethod]
     public void InsertBefore_AddsEntry()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
         list.Add(a);
-        list.InsertBefore(a, new HostsEntry("127.0.0.1 b"));
+        list.InsertBefore(a, new HostsEntry(undoManager, "127.0.0.1 b"));
         list[0].HostNames.ShouldBe("b");
     }
 
     [TestMethod]
     public void InsertAfter_AddsEntry()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
         list.Add(a);
-        list.InsertAfter(a, new HostsEntry("127.0.0.1 b"));
+        list.InsertAfter(a, new HostsEntry(undoManager, "127.0.0.1 b"));
         list[1].HostNames.ShouldBe("b");
     }
 
     [TestMethod]
     public void Remove_RemovesEntries()
     {
-        var list = new HostsEntryList();
-        var a = new HostsEntry("127.0.0.1 a");
-        var b = new HostsEntry("127.0.0.1 b");
+        var undoManager = new UndoManager();
+        var list = new HostsEntryList(undoManager);
+        var a = new HostsEntry(undoManager, "127.0.0.1 a");
+        var b = new HostsEntry(undoManager, "127.0.0.1 b");
         list.Add(a); list.Add(b);
         list.Remove(new[]{a});
         list.ShouldNotContain(a);

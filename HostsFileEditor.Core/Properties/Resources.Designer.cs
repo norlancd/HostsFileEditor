@@ -107,5 +107,11 @@ namespace HostsFileEditor.Properties {
                 return ResourceManager.GetString("UnknownException", resourceCulture);
             }
         }
+
+        internal static string ProfileFileNotFound {
+            get {
+                return ResourceManager.GetString("ProfileFileNotFound", resourceCulture);
+            }
+        }
     }
 }

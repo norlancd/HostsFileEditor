@@ -1,4 +1,5 @@
 using HostsFileEditor.Services;
+using HostsFileEditor.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -14,9 +15,23 @@ public partial class App : Application
     {
         InitializeComponent();
 
+        // Must run before anything resolves IHostsFile/HostsFile.Instance, so
+        // HostsEntryList/HostsEntry register undo actions against this exact
+        // UndoManager instance — not a second one resolved later.
+        HostsFile.Configure(UndoManager.Instance, HostsProfileList.Instance);
+
         var services = new ServiceCollection();
         services.AddSingleton<DialogService>();
         services.AddSingleton<AnimationService>();
+        services.AddSingleton<IUndoManager>(_ => UndoManager.Instance);
+        services.AddSingleton<IHostsFile>(_ => HostsFile.Instance);
+        services.AddSingleton<IHostsProfileList>(_ => HostsProfileList.Instance);
+        services.AddSingleton<ISettingsStore, WinUiSettingsStore>();
+        services.AddSingleton<IAuditLogger>(_ => AuditLogger.Instance);
+        services.AddSingleton<IProfileSwitcher, ProfileSwitcher>();
+        services.AddSingleton<IHotkeyRegistry>(_ => HotkeyRegistry.Instance);
+        services.AddSingleton<IRollbackTimerService>(_ => RollbackTimerService.Instance);
+        services.AddSingleton<IProfileExportImportService, ProfileExportImportService>();
         services.AddSingleton<MainWindow>();
 
         Services = services.BuildServiceProvider();

@@ -16,7 +16,11 @@ public enum AuditActionType
     FileImported,
     UrlImported,
     AliasUpdated,
-    ChainBreakDetected
+    ChainBreakDetected,
+    ProfileConfigFileApplied,
+    ProfileConfigFileFailed,
+    ProfilesExported,
+    ProfilesImported
 }
 
 public static class AuditSource
@@ -78,6 +82,9 @@ public class AuditDetail
     public string? SourcePath { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DestinationPath { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SourceUrl { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -100,6 +107,9 @@ public class AuditDetail
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? AffectedEntries { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ProfileNames { get; set; }
 }
 
 public class AuditEntry

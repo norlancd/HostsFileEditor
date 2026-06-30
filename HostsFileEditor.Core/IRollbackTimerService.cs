@@ -21,7 +21,7 @@ public interface IRollbackTimerService
 
     void SetAuditLogger(IAuditLogger auditLogger);
 
-    bool Start(string profileName, TimeSpan duration, Action profileActivation);
+    Task<bool> StartAsync(string profileName, TimeSpan duration, Func<Task> profileActivation);
 
     void ExecuteRevert(bool autoReverted = true);
 

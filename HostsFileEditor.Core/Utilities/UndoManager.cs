@@ -22,7 +22,11 @@ public class UndoManager : IUndoManager
 
     private bool _suspendAddActions;
 
-    private UndoManager()
+    /// <summary>
+    /// Public so callers needing an isolated instance (composition roots, tests) can
+    /// construct one directly — <see cref="Instance"/> remains the one shared by default.
+    /// </summary>
+    public UndoManager()
     {
         _undoActionsPosition = _undoActions.AddLast(new LinkedList<Action>());
         _redoActionsPosition = _redoActions.AddLast(new LinkedList<Action>());
