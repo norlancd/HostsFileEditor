@@ -1,4 +1,5 @@
 using HostsFileEditor.Properties;
+using System.Diagnostics;
 
 namespace HostsFileEditor;
 
@@ -79,49 +80,83 @@ public sealed class ProfileSwitcher : IProfileSwitcher
                 BypassedDiff = !_settings.DiffBeforeSwitchEnabled
             });
 
-        ApplyConfigFile(profile, auditSource);
+        await ApplyProfileActionsAsync(profile, auditSource);
 
         return true;
     }
 
-    /// <summary>
-    /// Copies a profile's configured "config file" (e.g. a VPN/SSH/kubeconfig needed
-    /// to talk to that profile's servers) into place after activation. Both
-    /// <see cref="HostsProfileMetadata.ConfigSourcePath"/> and
-    /// <see cref="HostsProfileMetadata.ConfigDestinationPath"/> are opt-in per profile —
-    /// most profiles leave them blank, in which case this does nothing.
-    /// </summary>
-    private void ApplyConfigFile(HostsProfile profile, string auditSource)
+    private async Task ApplyProfileActionsAsync(HostsProfile profile, string auditSource)
     {
         var metadata = profile.Metadata;
-        if (metadata == null || !metadata.HasConfigFile) return;
+        if (metadata == null) return;
 
-        try
+        var replacements = metadata.EffectiveFileReplacements;
+        var commands = metadata.Commands;
+
+        if (replacements.Count == 0 && commands.Count == 0) return;
+
+        await RunCommandsAsync(profile, commands.Where(c => c.Timing == ProfileCommandTiming.Before && c.IsValid), auditSource);
+
+        foreach (var fr in replacements.Where(r => r.IsValid))
         {
-            var destDir = Path.GetDirectoryName(metadata.ConfigDestinationPath);
-            if (!string.IsNullOrEmpty(destDir))
-                Directory.CreateDirectory(destDir);
-
-            File.Copy(metadata.ConfigSourcePath, metadata.ConfigDestinationPath, overwrite: true);
-
-            _auditLogger.Log(AuditActionType.ProfileConfigFileApplied, auditSource, new AuditDetail
+            try
             {
-                ProfileTo = profile.FileName,
-                SourcePath = metadata.ConfigSourcePath,
-                DestinationPath = metadata.ConfigDestinationPath
-            });
+                var destDir = Path.GetDirectoryName(fr.DestinationPath);
+                if (!string.IsNullOrEmpty(destDir))
+                    Directory.CreateDirectory(destDir);
+
+                File.Copy(fr.SourcePath, fr.DestinationPath, overwrite: true);
+
+                _auditLogger.Log(AuditActionType.ProfileConfigFileApplied, auditSource, new AuditDetail
+                {
+                    ProfileTo = profile.FileName,
+                    SourcePath = fr.SourcePath,
+                    DestinationPath = fr.DestinationPath
+                });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
+            {
+                _auditLogger.Log(AuditActionType.ProfileConfigFileFailed, auditSource, new AuditDetail
+                {
+                    ProfileTo = profile.FileName,
+                    SourcePath = fr.SourcePath,
+                    DestinationPath = fr.DestinationPath,
+                    NewValue = ex.Message
+                });
+                ProfileError?.Invoke($"Profile \"{profile.FileName}\" — file replacement failed:\n{fr.SourcePath} → {fr.DestinationPath}\n{ex.Message}");
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
-        {
-            _auditLogger.Log(AuditActionType.ProfileConfigFileFailed, auditSource, new AuditDetail
-            {
-                ProfileTo = profile.FileName,
-                SourcePath = metadata.ConfigSourcePath,
-                DestinationPath = metadata.ConfigDestinationPath,
-                NewValue = ex.Message
-            });
 
-            ProfileError?.Invoke($"Profile \"{profile.FileName}\" activated, but its config file could not be applied:\n{ex.Message}");
+        await RunCommandsAsync(profile, commands.Where(c => c.Timing == ProfileCommandTiming.After && c.IsValid), auditSource);
+    }
+
+    private async Task RunCommandsAsync(HostsProfile profile, IEnumerable<ProfileCommand> commands, string auditSource)
+    {
+        foreach (var cmd in commands)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = cmd.Executable,
+                    Arguments = cmd.Arguments,
+                    UseShellExecute = true
+                };
+                var proc = Process.Start(psi);
+                if (proc != null && cmd.WaitForExit)
+                    await proc.WaitForExitAsync();
+
+                _auditLogger.Log(AuditActionType.ProfileCommandExecuted, auditSource, new AuditDetail
+                {
+                    ProfileTo = profile.FileName,
+                    SourcePath = cmd.Executable,
+                    NewValue = $"{(cmd.Timing == ProfileCommandTiming.Before ? "Before" : "After")}: {cmd.Executable} {cmd.Arguments}".Trim()
+                });
+            }
+            catch (Exception ex)
+            {
+                ProfileError?.Invoke($"Profile \"{profile.FileName}\" — command failed:\n{cmd.Executable} {cmd.Arguments}\n{ex.Message}");
+            }
         }
     }
 

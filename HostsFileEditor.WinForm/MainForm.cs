@@ -407,6 +407,12 @@ internal partial class MainForm : Form
         await _profilesMenu!.ActivateAsNewProfile(inputDialog.Input);
     }
 
+    private void OnFileExportProfilesClick(object? sender, EventArgs e)
+        => _profilesMenu?.ShowExportProfilesDialog();
+
+    private void OnFileImportProfilesClick(object? sender, EventArgs e)
+        => _profilesMenu?.ShowImportProfilesDialog();
+
     /// <summary>
     /// Occurs when exit clicked.
     /// </summary>

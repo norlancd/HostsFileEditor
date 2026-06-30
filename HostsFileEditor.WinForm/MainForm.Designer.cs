@@ -96,6 +96,8 @@ partial class MainForm
         this.openTextEditor = new System.Windows.Forms.ToolStripMenuItem();
         this.menuRawEdit = new System.Windows.Forms.ToolStripMenuItem();
         this.menuImport = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuExportProfiles = new System.Windows.Forms.ToolStripMenuItem();
+        this.menuImportProfiles = new System.Windows.Forms.ToolStripMenuItem();
         this.menuExit = new System.Windows.Forms.ToolStripMenuItem();
         this.editToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
         this.menuRefresh = new System.Windows.Forms.ToolStripMenuItem();
@@ -477,6 +479,8 @@ partial class MainForm
         this.menuRawEdit,
         toolStripSeparator13,
         this.menuImport,
+        this.menuExportProfiles,
+        this.menuImportProfiles,
         toolStripSeparator12,
         this.menuExit});
         this.menuFile.Name = "menuFile";
@@ -523,7 +527,19 @@ partial class MainForm
         this.menuImport.Name = "menuImport";
         resources.ApplyResources(this.menuImport, "menuImport");
         this.menuImport.Click += new System.EventHandler(this.OnImportClick);
-        // 
+        //
+        // menuExportProfiles
+        //
+        this.menuExportProfiles.Name = "menuExportProfiles";
+        this.menuExportProfiles.Text = "Export Profiles…";
+        this.menuExportProfiles.Click += new System.EventHandler(this.OnFileExportProfilesClick);
+        //
+        // menuImportProfiles
+        //
+        this.menuImportProfiles.Name = "menuImportProfiles";
+        this.menuImportProfiles.Text = "Import Profiles…";
+        this.menuImportProfiles.Click += new System.EventHandler(this.OnFileImportProfilesClick);
+        //
         // toolStripSeparator12
         //
         toolStripSeparator12.Name = "toolStripSeparator12";
@@ -1109,6 +1125,8 @@ partial class MainForm
     private System.Windows.Forms.ToolStripMenuItem menuSaveAs;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
     private System.Windows.Forms.ToolStripMenuItem menuImport;
+    private System.Windows.Forms.ToolStripMenuItem menuExportProfiles;
+    private System.Windows.Forms.ToolStripMenuItem menuImportProfiles;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
     private System.Windows.Forms.ToolStripMenuItem editToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem menuUndo;

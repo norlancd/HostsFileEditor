@@ -3,6 +3,40 @@ using System.Text.Json.Serialization;
 
 namespace HostsFileEditor;
 
+/// <summary>A source→destination file copy that runs when a profile activates.</summary>
+public class FileReplacement
+{
+    [JsonPropertyName("sourcePath")]
+    public string SourcePath { get; set; } = string.Empty;
+
+    [JsonPropertyName("destinationPath")]
+    public string DestinationPath { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public bool IsValid => !string.IsNullOrWhiteSpace(SourcePath) && !string.IsNullOrWhiteSpace(DestinationPath);
+}
+
+public enum ProfileCommandTiming { Before, After }
+
+/// <summary>A shell command to run before or after a profile switch.</summary>
+public class ProfileCommand
+{
+    [JsonPropertyName("executable")]
+    public string Executable { get; set; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public string Arguments { get; set; } = string.Empty;
+
+    [JsonPropertyName("timing")]
+    public ProfileCommandTiming Timing { get; set; } = ProfileCommandTiming.After;
+
+    [JsonPropertyName("waitForExit")]
+    public bool WaitForExit { get; set; } = true;
+
+    [JsonIgnore]
+    public bool IsValid => !string.IsNullOrWhiteSpace(Executable);
+}
+
 public class HostsProfileMetadata
 {
     [JsonPropertyName("name")]
@@ -25,22 +59,36 @@ public class HostsProfileMetadata
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Path to a file that holds the config needed to interact with this profile's
-    /// servers (e.g. a VPN/SSH/kubeconfig). When set together with
-    /// <see cref="ConfigDestinationPath"/>, activating this profile copies it into
-    /// place automatically. Either or both blank means "do nothing" — most profiles
-    /// won't use this.
-    /// </summary>
+    /// <summary>File copies to apply on profile activation. Replaces the legacy single-pair fields.</summary>
+    [JsonPropertyName("fileReplacements")]
+    public List<FileReplacement> FileReplacements { get; set; } = [];
+
+    /// <summary>Shell commands to run before or after a profile switch.</summary>
+    [JsonPropertyName("commands")]
+    public List<ProfileCommand> Commands { get; set; } = [];
+
+    // Kept for backward-compat reading of old sidecar files. Superseded by FileReplacements.
     [JsonPropertyName("configSourcePath")]
     public string ConfigSourcePath { get; set; } = string.Empty;
 
-    /// <summary>The file <see cref="ConfigSourcePath"/> gets copied (overwritten) onto when this profile activates.</summary>
     [JsonPropertyName("configDestinationPath")]
     public string ConfigDestinationPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Returns the effective file replacements, migrating the legacy single-pair fields
+    /// if the new list is empty and the old fields are set.
+    /// </summary>
     [JsonIgnore]
-    public bool HasConfigFile => !string.IsNullOrWhiteSpace(ConfigSourcePath) && !string.IsNullOrWhiteSpace(ConfigDestinationPath);
+    public IReadOnlyList<FileReplacement> EffectiveFileReplacements
+    {
+        get
+        {
+            if (FileReplacements.Count > 0) return FileReplacements;
+            if (!string.IsNullOrWhiteSpace(ConfigSourcePath) && !string.IsNullOrWhiteSpace(ConfigDestinationPath))
+                return [new FileReplacement { SourcePath = ConfigSourcePath, DestinationPath = ConfigDestinationPath }];
+            return [];
+        }
+    }
 
     [JsonIgnore]
     public bool HasHotkey => HotkeyKey != 0;

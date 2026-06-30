@@ -17,7 +17,7 @@ public sealed record ExportProfilesResult(List<HostsProfile> SelectedProfiles, b
 
 public sealed record ProfileSettingsResult(
     string Description, string Color, int SortOrder, int HotkeyModifiers, int HotkeyKey,
-    string ConfigSourcePath, string ConfigDestinationPath);
+    List<FileReplacement> FileReplacements, List<ProfileCommand> Commands);
 
 public enum RollbackExpiryChoice { Revert, Snooze, Keep }
 
@@ -75,8 +75,9 @@ public class DialogService
     }
 
     public async Task<ProfileSettingsResult?> ShowProfileSettingsAsync(
-        XamlRoot xamlRoot, IntPtr hwnd, string profileFileName, string description, string color, int sortOrder, int hotkeyModifiers, int hotkeyKey,
-        string configSourcePath, string configDestinationPath)
+        XamlRoot xamlRoot, IntPtr hwnd, string profileFileName, string description, string color, int sortOrder,
+        int hotkeyModifiers, int hotkeyKey,
+        List<FileReplacement> fileReplacements, List<ProfileCommand> commands)
     {
         var txtDescription = new TextBox { Header = "Description", Text = description };
 
@@ -175,29 +176,168 @@ public class DialogService
             txtHotkey.Text = FormatHotkey(capturedModifiers, capturedKey);
         };
 
-        // Optional — copies a config file (VPN/SSH/kubeconfig, etc.) needed to talk to this
-        // profile's servers into place automatically when it activates. Leave either blank
-        // to do nothing, which is what most profiles will want.
-        var (configSourceField, txtConfigSource) = BuildPathField("Config source file (optional)", configSourcePath,
-            () => Win32FileDialogs.OpenFileDialog(hwnd, "All Files (*.*)|*.*"));
-        var (configDestinationField, txtConfigDestination) = BuildPathField("Overwrite this file (optional)", configDestinationPath,
-            () => Win32FileDialogs.SaveFileDialog(hwnd, configDestinationPath, "All Files (*.*)|*.*"));
+        // Helper: section header row with title on left, add button on right
+        Grid SectionHeader(string title, string addLabel, Action onAdd)
+        {
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var lbl = new TextBlock
+            {
+                Text = title,
+                Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var btn = new HyperlinkButton { Content = addLabel, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Center };
+            btn.Click += (_, _) => onAdd();
+            Grid.SetColumn(lbl, 0); Grid.SetColumn(btn, 1);
+            g.Children.Add(lbl); g.Children.Add(btn);
+            return g;
+        }
 
-        var panel = new StackPanel { Spacing = 12, MinWidth = 360 };
+        Border Divider() => new() { Height = 1, Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"], Margin = new Thickness(0, 4, 0, 0) };
+
+        // ── File Replacements ────────────────────────────────────────────────
+        var replacementRows = new List<(TextBox Src, TextBox Dst)>();
+        var replacementsStack = new StackPanel { Spacing = 8 };
+
+        void AddReplacementRow(string src = "", string dst = "")
+        {
+            var srcBox = new TextBox { PlaceholderText = "Source file…", Text = src };
+            var srcBrowse = new Button { Content = "…", Width = 36, Padding = new Thickness(4, 2, 4, 2) };
+            srcBrowse.Click += (_, _) => { var p = Win32FileDialogs.OpenFileDialog(hwnd, "All Files (*.*)|*.*"); if (p != null) srcBox.Text = p; };
+
+            var dstBox = new TextBox { PlaceholderText = "Destination file…", Text = dst };
+            var dstBrowse = new Button { Content = "…", Width = 36, Padding = new Thickness(4, 2, 4, 2) };
+            dstBrowse.Click += (_, _) => { var p = Win32FileDialogs.SaveFileDialog(hwnd, dstBox.Text, "All Files (*.*)|*.*"); if (p != null) dstBox.Text = p; };
+
+            var removeBtn = new Button { Content = "×", Width = 36, Padding = new Thickness(4, 2, 4, 2) };
+
+            var entry = (srcBox, dstBox);
+            replacementRows.Add(entry);
+
+            // Src row: textbox + browse
+            var srcRow = new Grid { ColumnSpacing = 4 };
+            srcRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            srcRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(srcBox, 0); Grid.SetColumn(srcBrowse, 1);
+            srcRow.Children.Add(srcBox); srcRow.Children.Add(srcBrowse);
+
+            // Dst row: textbox + browse + remove
+            var dstRow = new Grid { ColumnSpacing = 4 };
+            dstRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            dstRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            dstRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(dstBox, 0); Grid.SetColumn(dstBrowse, 1); Grid.SetColumn(removeBtn, 2);
+            dstRow.Children.Add(dstBox); dstRow.Children.Add(dstBrowse); dstRow.Children.Add(removeBtn);
+
+            var card = new Border
+            {
+                Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(10, 8, 10, 8)
+            };
+            var inner = new StackPanel { Spacing = 6 };
+            inner.Children.Add(new TextBlock { Text = "Source", FontSize = 11, Opacity = 0.6 });
+            inner.Children.Add(srcRow);
+            inner.Children.Add(new TextBlock { Text = "Destination", FontSize = 11, Opacity = 0.6 });
+            inner.Children.Add(dstRow);
+            card.Child = inner;
+
+            removeBtn.Click += (_, _) => { replacementsStack.Children.Remove(card); replacementRows.Remove(entry); };
+            replacementsStack.Children.Add(card);
+        }
+
+        foreach (var fr in fileReplacements)
+            AddReplacementRow(fr.SourcePath, fr.DestinationPath);
+
+        var replacementsSection = new StackPanel { Spacing = 6 };
+        replacementsSection.Children.Add(SectionHeader("File Replacements", "+ Add", () => AddReplacementRow()));
+        replacementsSection.Children.Add(replacementsStack);
+
+        // ── Commands ─────────────────────────────────────────────────────────
+        var commandRows = new List<(ComboBox Timing, TextBox Exe, TextBox Args, CheckBox Wait)>();
+        var commandsStack = new StackPanel { Spacing = 8 };
+
+        void AddCommandRow(ProfileCommandTiming timing = ProfileCommandTiming.After, string exe = "", string args = "", bool wait = true)
+        {
+            var timingBox = new ComboBox { MinWidth = 90 };
+            timingBox.Items.Add("Before");
+            timingBox.Items.Add("After");
+            timingBox.SelectedIndex = timing == ProfileCommandTiming.Before ? 0 : 1;
+
+            var exeBox = new TextBox { PlaceholderText = "Executable or script…", Text = exe };
+            var exeBrowse = new Button { Content = "…", Width = 36, Padding = new Thickness(4, 2, 4, 2) };
+            exeBrowse.Click += (_, _) => { var p = Win32FileDialogs.OpenFileDialog(hwnd, "All Files (*.*)|*.*"); if (p != null) exeBox.Text = p; };
+
+            var argsBox = new TextBox { PlaceholderText = "Arguments (optional)", Text = args };
+            var waitBox = new CheckBox { Content = "Wait for exit", IsChecked = wait };
+
+            var removeBtn = new Button { Content = "×", Width = 36, Padding = new Thickness(4, 2, 4, 2) };
+
+            var entry = (timingBox, exeBox, argsBox, waitBox);
+            commandRows.Add(entry);
+
+            // Top row: timing + exe + browse + remove
+            var topRow = new Grid { ColumnSpacing = 4 };
+            topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            topRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(timingBox, 0); Grid.SetColumn(exeBox, 1); Grid.SetColumn(exeBrowse, 2); Grid.SetColumn(removeBtn, 3);
+            topRow.Children.Add(timingBox); topRow.Children.Add(exeBox); topRow.Children.Add(exeBrowse); topRow.Children.Add(removeBtn);
+
+            // Bottom row: args + wait
+            var botRow = new Grid { ColumnSpacing = 8 };
+            botRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            botRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(argsBox, 0); Grid.SetColumn(waitBox, 1);
+            botRow.Children.Add(argsBox); botRow.Children.Add(waitBox);
+
+            var card = new Border
+            {
+                Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(10, 8, 10, 8)
+            };
+            var inner = new StackPanel { Spacing = 6 };
+            inner.Children.Add(topRow);
+            inner.Children.Add(new TextBlock { Text = "Arguments", FontSize = 11, Opacity = 0.6 });
+            inner.Children.Add(botRow);
+            card.Child = inner;
+
+            removeBtn.Click += (_, _) => { commandsStack.Children.Remove(card); commandRows.Remove(entry); };
+            commandsStack.Children.Add(card);
+        }
+
+        foreach (var cmd in commands)
+            AddCommandRow(cmd.Timing, cmd.Executable, cmd.Arguments, cmd.WaitForExit);
+
+        var commandsSection = new StackPanel { Spacing = 6 };
+        commandsSection.Children.Add(SectionHeader("Commands", "+ Add", () => AddCommandRow()));
+        commandsSection.Children.Add(commandsStack);
+
+        // ── Dialog ────────────────────────────────────────────────────────────
+        var panel = new StackPanel { Spacing = 12, MinWidth = 420 };
         panel.Children.Add(txtDescription);
         panel.Children.Add(colorRowOuter);
         panel.Children.Add(numSortOrder);
         panel.Children.Add(txtHotkey);
-        panel.Children.Add(configSourceField);
-        panel.Children.Add(configDestinationField);
+        panel.Children.Add(Divider());
+        panel.Children.Add(replacementsSection);
+        panel.Children.Add(Divider());
+        panel.Children.Add(commandsSection);
 
+        // ContentDialog scrolls natively when content overflows — no inner ScrollViewer needed
         var dlg = new ContentDialog
         {
             XamlRoot = xamlRoot,
             Title = $"Profile Settings — {profileFileName}",
-            // Six fields can exceed the dialog's default height and get clipped without
-            // this — the two config-file fields were silently unreachable without it.
-            Content = new ScrollViewer { Content = panel, MaxHeight = 480, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+            Content = panel,
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel"
         };
@@ -205,14 +345,30 @@ public class DialogService
         var result = await dlg.ShowAsync();
         if (result != ContentDialogResult.Primary) return null;
 
+        var resultReplacements = replacementRows
+            .Select(r => new FileReplacement { SourcePath = r.Src.Text.Trim(), DestinationPath = r.Dst.Text.Trim() })
+            .Where(fr => fr.IsValid)
+            .ToList();
+
+        var resultCommands = commandRows
+            .Select(r => new ProfileCommand
+            {
+                Timing = r.Timing.SelectedIndex == 0 ? ProfileCommandTiming.Before : ProfileCommandTiming.After,
+                Executable = r.Exe.Text.Trim(),
+                Arguments = r.Args.Text.Trim(),
+                WaitForExit = r.Wait.IsChecked == true
+            })
+            .Where(c => c.IsValid)
+            .ToList();
+
         return new ProfileSettingsResult(
             txtDescription.Text,
             pickedColor is { } pc ? $"#{pc.R:X2}{pc.G:X2}{pc.B:X2}" : string.Empty,
             double.IsNaN(numSortOrder.Value) ? 0 : (int)numSortOrder.Value,
             capturedModifiers,
             capturedKey,
-            txtConfigSource.Text.Trim(),
-            txtConfigDestination.Text.Trim());
+            resultReplacements,
+            resultCommands);
     }
 
     private static (FrameworkElement Field, TextBox Input) BuildPathField(string header, string initialValue, Func<string?> browse)

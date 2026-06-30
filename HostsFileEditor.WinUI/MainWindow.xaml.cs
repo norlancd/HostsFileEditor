@@ -126,6 +126,9 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IAuditLogger _auditLogger;
     private readonly IProfileExportImportService _exportImportService;
     private HotkeyMessageHook? _hotkeyHook;
+    private TrayIconManager? _trayIcon;
+    private bool _isExiting;
+    private AppTheme _currentTheme = AppTheme.System;
     private DispatcherTimer? _timerCountdownTick;
     private DispatcherTimer? _notificationTimer;
 
@@ -193,12 +196,70 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         // WinUI has no Form.WndProc-style hook for WM_HOTKEY, so subclass the native
         // window to catch it — same global hotkeys WinForm registers, shared via Core.
         var hwnd = GetHwnd();
+
+        // Tray icon — created first so it is the inner subclass layer; HotkeyMessageHook
+        // goes on top and passes unhandled messages through to TrayIconManager.
+        _trayIcon = new TrayIconManager(hwnd, ShowFromTray, ExitApp,
+            getMenuData: () =>
+            {
+                var profiles = Archives
+                    .Select(p => new TrayProfile(p.FileName, _profileSwitcher.ActiveProfile == p, p.IsDefault))
+                    .ToList();
+                return (profiles, _profileSwitcher.IsHostsDisabled);
+            },
+            activateProfile: profileName =>
+            {
+                _ = DispatcherQueue.TryEnqueue(async () =>
+                {
+                    var profile = profileName is null
+                        ? Archives.FirstOrDefault(p => p.IsDefault)
+                        : Archives.FirstOrDefault(p => p.FileName == profileName);
+                    if (profile is not null)
+                        await _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu);
+                });
+            },
+            disableHosts: () =>
+            {
+                _ = DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (_profileSwitcher.IsHostsDisabled)
+                    {
+                        // Re-enable: activate default profile
+                        var def = Archives.FirstOrDefault(p => p.IsDefault);
+                        if (def is not null)
+                            _ = _profileSwitcher.ActivateAsync(def, ProfileSwitcher.TriggerSource.TrayMenu);
+                    }
+                    else
+                    {
+                        _profileSwitcher.DisableAll();
+                        _auditLogger.Log(AuditActionType.HostsFileDisabled, AuditSource.MainForm);
+                    }
+                });
+            });
+
+        // Hide to tray on close instead of destroying the window.
+        // AppWindow.Closing is the only cancellable close event in WinUI 3.
+        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var appWindow = AppWindow.GetFromWindowId(windowId);
+        if (appWindow != null)
+        {
+            appWindow.Closing += (_, args) =>
+            {
+                if (!_isExiting)
+                {
+                    args.Cancel = true;
+                    appWindow.Hide();
+                }
+            };
+        }
+
         _hotkeyHook = new HotkeyMessageHook(hwnd, OnHotkeyPressed);
         _hotkeyRegistry.Initialize(hwnd);
         Closed += (_, _) =>
         {
             _hotkeyRegistry.UnregisterAll();
             _hotkeyHook?.Dispose();
+            _trayIcon?.Dispose();
         };
 
         // RecoverFromRestart() must run before subscribing to Notification, so the
@@ -270,6 +331,34 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             _undoManager.HistoryChanged -= OnUndoHistoryChanged;
             _hostsFile.Entries.ListChanged -= OnCoreEntriesListChanged;
         };
+
+        // Apply saved theme (Content is available after InitializeComponent)
+        ApplyTheme(AppThemeHelper.FromString(LocalSettings.Theme));
+    }
+
+    private void ApplyTheme(AppTheme theme)
+    {
+        _currentTheme = theme;
+        if (Content is FrameworkElement root)
+            root.RequestedTheme = AppThemeHelper.ToElementTheme(theme);
+        if (_backdropConfiguration is not null)
+            _backdropConfiguration.Theme = AppThemeHelper.ToBackdropTheme(theme);
+        SyncThemeMenuItems();
+    }
+
+    private void SyncThemeMenuItems()
+    {
+        if (ThemeSystemItem is not null) ThemeSystemItem.IsChecked = _currentTheme == AppTheme.System;
+        if (ThemeLightItem  is not null) ThemeLightItem.IsChecked  = _currentTheme == AppTheme.Light;
+        if (ThemeDarkItem   is not null) ThemeDarkItem.IsChecked   = _currentTheme == AppTheme.Dark;
+    }
+
+    private void OnThemeClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleMenuFlyoutItem item) return;
+        var theme = AppThemeHelper.FromString(item.Tag?.ToString());
+        LocalSettings.Theme = theme.ToString();
+        ApplyTheme(theme);
     }
 
     private void OnCoreEntriesListChanged(object? sender, ListChangedEventArgs e)
@@ -958,10 +1047,19 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         if (Content?.XamlRoot is not { } root) return;
 
         var metadata = profile.Metadata;
+
+        // Migrate legacy single-pair to the new list on first open so the user sees it
+        var initialReplacements = metadata?.FileReplacements.Count > 0
+            ? metadata.FileReplacements
+            : metadata?.EffectiveFileReplacements.ToList() ?? [];
+
         var result = await _dialogService.ShowProfileSettingsAsync(
-            root, GetHwnd(), profile.FileName, metadata?.Description ?? string.Empty, metadata?.Color ?? string.Empty, metadata?.SortOrder ?? 0,
+            root, GetHwnd(), profile.FileName,
+            metadata?.Description ?? string.Empty,
+            metadata?.Color ?? string.Empty,
+            metadata?.SortOrder ?? 0,
             metadata?.HotkeyModifiers ?? 0, metadata?.HotkeyKey ?? 0,
-            metadata?.ConfigSourcePath ?? string.Empty, metadata?.ConfigDestinationPath ?? string.Empty);
+            initialReplacements, metadata?.Commands ?? []);
 
         if (result is null) return;
 
@@ -978,8 +1076,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         meta.SortOrder = result.SortOrder;
         meta.HotkeyModifiers = result.HotkeyKey == 0 ? 0 : result.HotkeyModifiers;
         meta.HotkeyKey = result.HotkeyKey;
-        meta.ConfigSourcePath = result.ConfigSourcePath;
-        meta.ConfigDestinationPath = result.ConfigDestinationPath;
+        meta.FileReplacements = result.FileReplacements;
+        meta.Commands = result.Commands;
+        // Clear legacy fields once migrated to the new list
+        meta.ConfigSourcePath = string.Empty;
+        meta.ConfigDestinationPath = string.Empty;
         meta.Save(profile.FilePath);
         profile.ReloadMetadata();
 
@@ -1219,7 +1320,10 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Populate the title bar DropDownButton flyout
         if (ProfileDropButton?.Flyout is MenuFlyout dropFlyout)
+        {
+            dropFlyout.MenuFlyoutPresenterStyle = ProfileFlyoutPresenterStyle;
             PopulateProfileMenuItems(dropFlyout.Items);
+        }
 
         // Swap the MenuBar "Profiles" item (clear+repopulate on a MenuBarItem causes
         // WinUI to ghost old items over new ones after the flyout has been opened once;
@@ -1243,19 +1347,19 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         bool hostsDisabled = _profileSwitcher.IsHostsDisabled;
 
-        var saveCurrentItem = new MenuFlyoutItem { Text = "Save Current as Profile…", IsEnabled = !hostsDisabled };
+        var saveCurrentItem = new MenuFlyoutItem { Text = "Save Current as Profile…", IsEnabled = !hostsDisabled, Icon = AppIcons.Create(AppIcons.SaveCurrentAsProfile) };
         saveCurrentItem.Click += OnArchiveClick;
         items.Add(saveCurrentItem);
 
-        var newEmptyItem = new MenuFlyoutItem { Text = "New Empty Profile…", IsEnabled = !hostsDisabled };
+        var newEmptyItem = new MenuFlyoutItem { Text = "New Empty Profile…", IsEnabled = !hostsDisabled, Icon = AppIcons.Create(AppIcons.NewProfile) };
         newEmptyItem.Click += OnNewEmptyProfileClick;
         items.Add(newEmptyItem);
 
-        var exportItem = new MenuFlyoutItem { Text = "Export Profiles…" };
+        var exportItem = new MenuFlyoutItem { Text = "Export Profiles…", Icon = AppIcons.Create(AppIcons.Export) };
         exportItem.Click += OnExportProfilesClick;
         items.Add(exportItem);
 
-        var importItem = new MenuFlyoutItem { Text = "Import Profiles…" };
+        var importItem = new MenuFlyoutItem { Text = "Import Profiles…", Icon = AppIcons.Create(AppIcons.Import) };
         importItem.Click += OnImportProfilesClick;
         items.Add(importItem);
 
@@ -1265,79 +1369,97 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         bool isDefaultActive = defaultProfile != null && _profileSwitcher.ActiveProfile == defaultProfile && !hostsDisabled;
         if (defaultProfile != null)
         {
-            items.Add(BuildProfileMenuItem(defaultProfile, isDefaultActive, includeDelete: false));
+            AddProfileMenuItems(items, defaultProfile, isDefaultActive, includeDelete: false);
             items.Add(new MenuFlyoutSeparator());
         }
 
         foreach (var profile in Archives.Where(p => !p.IsDefault))
         {
             bool isActive = _profileSwitcher.ActiveProfile == profile && !hostsDisabled;
-            items.Add(BuildProfileMenuItem(profile, isActive, includeDelete: true));
+            AddProfileMenuItems(items, profile, isActive, includeDelete: true);
         }
 
         items.Add(new MenuFlyoutSeparator());
-        var disableItem = new ToggleMenuFlyoutItem { Text = "Hosts File Disabled", IsChecked = hostsDisabled };
+        var disableItem = new ToggleMenuFlyoutItem { Text = "Hosts File Disabled", IsChecked = hostsDisabled, Icon = AppIcons.Create(AppIcons.HostsDisabled) };
         disableItem.Click += OnHostsDisabledToggleClick;
         items.Add(disableItem);
     }
 
-    private MenuFlyoutSubItem BuildProfileMenuItem(HostsProfile profile, bool isActive, bool includeDelete)
+    private void AddProfileMenuItems(IList<MenuFlyoutItemBase> items, HostsProfile profile, bool isActive, bool includeDelete)
     {
         var meta = profile.Metadata;
         var label = profile.IsDefault ? "Default" : profile.FileName;
         if (meta?.HasHotkey == true)
             label += $"  ({FormatHotkeyChord(meta.HotkeyModifiers, meta.HotkeyKey)})";
-        if (isActive)
-            label += "  ✓";
+
+        bool profileExists = File.Exists(profile.FilePath);
+        var profileColor = Services.DialogService.ParseHexColor(meta?.Color);
 
         var sub = new MenuFlyoutSubItem { Text = label };
 
-        // Show a colored swatch icon when the profile has a color assigned
-        var profileColor = Services.DialogService.ParseHexColor(meta?.Color);
-        if (profileColor is { } pc)
+        // Active: checkmark glyph tinted with profile color (or default foreground if no color).
+        // Inactive: plain color swatch. Both occupy the icon slot — keeps a single sub-item per profile.
+        if (isActive)
+        {
+            sub.Icon = new FontIcon
+            {
+                Glyph      = AppIcons.ActiveProfileCheck,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily(AppIcons.FontFamilyName),
+                Foreground = profileColor is { } ac ? new SolidColorBrush(ac) : null
+            };
+            sub.FontWeight = new Windows.UI.Text.FontWeight { Weight = 600 };
+        }
+        else if (profileColor is { } pc)
         {
             sub.Icon = new PathIcon
             {
-                Data = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, 12, 12) },
+                Data = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, 20, 20) },
                 Foreground = new SolidColorBrush(pc)
             };
         }
 
-        bool profileExists = File.Exists(profile.FilePath);
-
-        var activateItem = new MenuFlyoutItem { Text = isActive ? "Reload" : "Activate", IsEnabled = profileExists };
+        var activateItem = new MenuFlyoutItem { Text = isActive ? "Reload" : "Activate", IsEnabled = profileExists, Icon = AppIcons.Create(isActive ? AppIcons.Reload : AppIcons.Activate) };
         activateItem.Click += async (_, _) => await _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu);
         sub.Items.Add(activateItem);
 
-        // Always shown (matches WinForm), but disabled for the currently active profile
-        // since there is nothing to "temporarily switch to" when you're already on it.
-        var timerItem = new MenuFlyoutItem { Text = "Activate Temporarily…", IsEnabled = profileExists && !isActive };
+        var timerItem = new MenuFlyoutItem { Text = "Activate Temporarily…", IsEnabled = profileExists && !isActive, Icon = AppIcons.Create(AppIcons.ActivateTimer) };
         timerItem.Click += async (_, _) => await ActivateWithTimerAsync(profile);
         sub.Items.Add(timerItem);
 
         sub.Items.Add(new MenuFlyoutSeparator());
 
-        var cloneItem = new MenuFlyoutItem { Text = "Clone…" };
+        var cloneItem = new MenuFlyoutItem { Text = "Clone…", Icon = AppIcons.Create(AppIcons.Clone) };
         cloneItem.Click += async (_, _) => await CloneProfileAsync(profile);
         sub.Items.Add(cloneItem);
 
-        var rawEditItem = new MenuFlyoutItem { Text = "Raw Edit…" };
+        var rawEditItem = new MenuFlyoutItem { Text = "Raw Edit…", Icon = AppIcons.Create(AppIcons.RawEdit) };
         rawEditItem.Click += async (_, _) => await RawEditProfileAsync(profile);
         sub.Items.Add(rawEditItem);
 
-        var settingsItem = new MenuFlyoutItem { Text = "Profile Settings…" };
+        var settingsItem = new MenuFlyoutItem { Text = "Profile Settings…", Icon = AppIcons.Create(AppIcons.ProfileSettings) };
         settingsItem.Click += async (_, _) => await ShowProfileSettingsAsync(profile);
         sub.Items.Add(settingsItem);
 
         if (includeDelete)
         {
             sub.Items.Add(new MenuFlyoutSeparator());
-            var deleteItem = new MenuFlyoutItem { Text = "Delete" };
+            var deleteItem = new MenuFlyoutItem { Text = "Delete", Icon = AppIcons.Create(AppIcons.Delete) };
             deleteItem.Click += async (_, _) => await DeleteProfileAsync(profile);
             sub.Items.Add(deleteItem);
         }
 
-        return sub;
+        items.Add(sub);
+    }
+
+    // Wide presenter style so long profile names are never truncated in the flyout.
+    private static Style? _profileFlyoutPresenterStyle;
+    private static Style ProfileFlyoutPresenterStyle => _profileFlyoutPresenterStyle ??= BuildProfileFlyoutStyle();
+    private static Style BuildProfileFlyoutStyle()
+    {
+        var style = new Style(typeof(MenuFlyoutPresenter));
+        style.Setters.Add(new Setter(MenuFlyoutPresenter.MinWidthProperty, 280.0));
+        style.Setters.Add(new Setter(MenuFlyoutPresenter.MaxWidthProperty, 480.0));
+        return style;
     }
 
     private static string FormatHotkeyChord(int modifiers, int key)
@@ -1379,7 +1501,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             var bundleConfigFor = result.BundleConfigFiles
                 ? (IReadOnlySet<string>)result.SelectedProfiles
-                    .Where(p => p.Metadata?.HasConfigFile == true)
+                    .Where(p => p.Metadata?.EffectiveFileReplacements.Count > 0)
                     .Select(p => p.FileName)
                     .ToHashSet()
                 : new HashSet<string>();
@@ -1523,8 +1645,28 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         await CloneProfileAsync(profile);
     }
 
-    private void OnExitClick(object sender, RoutedEventArgs e)
-        => Application.Current.Exit();
+    private void OnExitClick(object sender, RoutedEventArgs e) => ExitApp();
+
+    private void ExitApp()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _isExiting = true;
+            _trayIcon?.Dispose();
+            Application.Current.Exit();
+        });
+    }
+
+    private void ShowFromTray()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            var hwnd = GetHwnd();
+            NativeMethods.ShowWindow(hwnd, NativeMethods.SW_RESTORE);
+            NativeMethods.SetForegroundWindow(hwnd);
+            Activate();
+        });
+    }
 
     private async void OnAuditLogClick(object sender, RoutedEventArgs e)
     {

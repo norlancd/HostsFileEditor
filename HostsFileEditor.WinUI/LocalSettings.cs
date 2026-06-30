@@ -46,6 +46,12 @@ internal static class LocalSettings
         }
     }
 
+    public static string Theme
+    {
+        get => GetString("Theme") ?? "System";
+        set => SetString("Theme", value);
+    }
+
     private static Dictionary<string, bool> Load()
     {
         try

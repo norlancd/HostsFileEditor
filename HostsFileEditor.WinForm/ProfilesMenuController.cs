@@ -445,6 +445,9 @@ internal sealed class ProfilesMenuController
         return bmp;
     }
 
+    public void ShowExportProfilesDialog() => OnExportProfilesClick(null, EventArgs.Empty);
+    public void ShowImportProfilesDialog() => OnImportProfilesClick(null, EventArgs.Empty);
+
     private void OnExportProfilesClick(object? sender, EventArgs e)
     {
         using var form = new ProfileExportForm(_profileList);
@@ -464,7 +467,7 @@ internal sealed class ProfilesMenuController
         {
             var bundleConfigFor = form.BundleConfigFiles
                 ? form.SelectedProfiles
-                    .Where(p => p.Metadata?.HasConfigFile == true)
+                    .Where(p => p.Metadata?.EffectiveFileReplacements.Count > 0)
                     .Select(p => p.FileName)
                     .ToHashSet()
                 : (IReadOnlySet<string>)new HashSet<string>();

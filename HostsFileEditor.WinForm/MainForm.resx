@@ -652,7 +652,7 @@
     <value>166, 22</value>
   </data>
   <data name="menuImport.Text" xml:space="preserve">
-    <value>&amp;Import...</value>
+    <value>&amp;Import Host File...</value>
   </data>
   <metadata name="toolStripSeparator12.GenerateMember" type="System.Boolean, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089">
     <value>False</value>

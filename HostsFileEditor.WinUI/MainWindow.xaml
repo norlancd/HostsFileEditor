@@ -79,10 +79,21 @@
                 <MenuFlyoutItem Text="Save" Icon="Save" Click="OnSaveClick" KeyboardAcceleratorTextOverride="Ctrl+S"/>
                 <MenuFlyoutItem Text="Save As" Icon="SaveLocal" Click="OnSaveAsClick"/>
                 <MenuFlyoutSeparator/>
-                <MenuFlyoutItem Text="Import" Icon="OpenFile" Click="OnImportClick"/>
+                <MenuFlyoutItem Text="Import Host File" Icon="OpenFile" Click="OnImportClick"/>
                 <MenuFlyoutItem Text="Open Text Editor" Click="OnOpenInTextEditorClick">
                     <MenuFlyoutItem.Icon>
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE70F;"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutItem Text="Export Profiles…" Click="OnExportProfilesClick">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A9;"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                <MenuFlyoutItem Text="Import Profiles…" Click="OnImportProfilesClick">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8B5;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
@@ -116,7 +127,7 @@
                 <MenuFlyoutItem Text="Delete" Icon="Delete" Click="OnDeleteClick"/>
                 <MenuFlyoutItem Text="Duplicate" Click="OnDuplicateClick">
                     <MenuFlyoutItem.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8F3;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
@@ -132,18 +143,18 @@
                 </MenuFlyoutItem>
                 <MenuFlyoutItem Text="Insert Above" Click="OnInsertAboveClick">
                     <MenuFlyoutItem.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEA4B;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74A;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutItem Text="Insert Below" Click="OnInsertBelowClick">
                     <MenuFlyoutItem.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEA4C;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74B;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
                 <MenuFlyoutItem Text="Enable / Disable" Click="OnCheckClick">
                     <MenuFlyoutItem.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE73E;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE9A0;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
             </MenuBarItem>
@@ -161,7 +172,7 @@
                 </ToggleMenuFlyoutItem>
                 <MenuFlyoutItem Text="Reset Filters" Click="OnResetFiltersClick">
                     <MenuFlyoutItem.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE894;"/>
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 <MenuFlyoutSeparator/>
@@ -191,6 +202,15 @@
                         <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8AB;"/>
                     </ToggleMenuFlyoutItem.Icon>
                 </ToggleMenuFlyoutItem>
+                <MenuFlyoutSeparator/>
+                <MenuFlyoutSubItem Text="Theme">
+                    <MenuFlyoutSubItem.Icon>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE793;"/>
+                    </MenuFlyoutSubItem.Icon>
+                    <ToggleMenuFlyoutItem x:Name="ThemeSystemItem" Text="System" Click="OnThemeClick" Tag="System"/>
+                    <ToggleMenuFlyoutItem x:Name="ThemeLightItem" Text="Light" Click="OnThemeClick" Tag="Light"/>
+                    <ToggleMenuFlyoutItem x:Name="ThemeDarkItem" Text="Dark" Click="OnThemeClick" Tag="Dark"/>
+                </MenuFlyoutSubItem>
             </MenuBarItem>
             <!-- Help -->
             <MenuBarItem Title="Help">
@@ -254,7 +274,7 @@
                 <AppBarButton Label="Duplicate" Click="OnDuplicateClick" x:Name="DuplicateButton"
                               ToolTipService.ToolTip="Duplicate">
                     <AppBarButton.Icon>
-                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;"/>
+                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8F3;"/>
                     </AppBarButton.Icon>
                 </AppBarButton>
                 <AppBarButton Label="Insert Above" Click="OnInsertAboveClick"
@@ -352,7 +372,7 @@
                                 <MenuFlyoutSeparator/>
                                 <MenuFlyoutItem Text="Reset Filters" Click="OnResetFiltersClick">
                                     <MenuFlyoutItem.Icon>
-                                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;"/>
+                                        <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE894;"/>
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
                             </MenuFlyout>
@@ -392,12 +412,12 @@
                             <MenuFlyoutSeparator />
                             <MenuFlyoutItem x:Name="CtxAddAbove" Text="Add Above" Click="OnInsertAboveClick">
                                 <MenuFlyoutItem.Icon>
-                                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEA4B;"/>
+                                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74A;"/>
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutItem x:Name="CtxAddBelow" Text="Add Below" Click="OnInsertBelowClick">
                                 <MenuFlyoutItem.Icon>
-                                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEA4C;"/>
+                                    <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74B;"/>
                                 </MenuFlyoutItem.Icon>
                             </MenuFlyoutItem>
                             <MenuFlyoutSeparator />
@@ -462,7 +482,11 @@
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" VerticalAlignment="Center">
                     <TextBlock Grid.Column="0" Text="Profiles" FontWeight="Normal" VerticalAlignment="Center" Margin="16,0,8,0"/>
                     <CommandBar Grid.Column="1" Background="Transparent" DefaultLabelPosition="Right" Padding="0" HorizontalAlignment="Left">
-                        <AppBarButton x:Name="ArchiveLoadButton" Icon="OpenFile" Label="Activate" Click="OnArchiveLoadClick" IsEnabled="False"/>
+                        <AppBarButton x:Name="ArchiveLoadButton" Label="Activate" Click="OnArchiveLoadClick" IsEnabled="False">
+                            <AppBarButton.Icon>
+                                <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE768;"/>
+                            </AppBarButton.Icon>
+                        </AppBarButton>
                         <AppBarButton x:Name="ArchiveTimerButton" Label="Activate Temporarily" Click="OnArchiveTimerClick" IsEnabled="False">
                             <AppBarButton.Icon>
                                 <FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEB91;"/>

@@ -19,6 +19,7 @@ public enum AuditActionType
     ChainBreakDetected,
     ProfileConfigFileApplied,
     ProfileConfigFileFailed,
+    ProfileCommandExecuted,
     ProfilesExported,
     ProfilesImported
 }

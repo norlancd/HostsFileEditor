@@ -60,11 +60,12 @@ public sealed class ProfileExportImportService : IProfileExportImportService
                     };
                     WriteJsonEntry(zip, $"profiles/{profile.FileName}.json", exportMetadata);
 
+                    var firstReplacement = metadata.EffectiveFileReplacements.FirstOrDefault();
                     if (bundleConfigForFileNames.Contains(profile.FileName) &&
-                        metadata.HasConfigFile &&
-                        File.Exists(metadata.ConfigSourcePath))
+                        firstReplacement is { IsValid: true } &&
+                        File.Exists(firstReplacement.SourcePath))
                     {
-                        zip.CreateEntryFromFile(metadata.ConfigSourcePath, $"configfiles/{profile.FileName}.config");
+                        zip.CreateEntryFromFile(firstReplacement.SourcePath, $"configfiles/{profile.FileName}.config");
                         manifestEntry.ConfigFileBundled = true;
                     }
                 }
