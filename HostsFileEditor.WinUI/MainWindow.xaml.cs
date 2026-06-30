@@ -1292,6 +1292,17 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         var sub = new MenuFlyoutSubItem { Text = label };
 
+        // Show a colored swatch icon when the profile has a color assigned
+        var profileColor = Services.DialogService.ParseHexColor(meta?.Color);
+        if (profileColor is { } pc)
+        {
+            sub.Icon = new PathIcon
+            {
+                Data = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, 12, 12) },
+                Foreground = new SolidColorBrush(pc)
+            };
+        }
+
         bool profileExists = File.Exists(profile.FilePath);
 
         var activateItem = new MenuFlyoutItem { Text = isActive ? "Reload" : "Activate", IsEnabled = profileExists };
