@@ -299,6 +299,7 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
             _unparsedTextInvalid = true;
 
             var prevValid = _valid;
+            var prevHasCommentOnly = HasCommentOnly;
             performValidation();
 
             OnPropertyChanged(property);
@@ -309,6 +310,11 @@ public partial class HostsEntry : INotifyPropertyChanged, IDataErrorInfo, IDispo
                 OnPropertyChanged(nameof(IpAddress));
                 OnPropertyChanged(nameof(HostNames));
                 OnPropertyChanged(nameof(Enabled));
+            }
+
+            if (prevHasCommentOnly != HasCommentOnly)
+            {
+                OnPropertyChanged(nameof(HasCommentOnly));
             }
 
             OnPropertyChanged(nameof(Self));

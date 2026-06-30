@@ -449,6 +449,39 @@ public class DialogService
         return string.Join(" + ", parts);
     }
 
+    public async Task<string?> ShowRawEditAsync(XamlRoot xamlRoot, string title, string content)
+    {
+        var textBox = new TextBox
+        {
+            Text = content,
+            AcceptsReturn = true,
+            FontFamily = new FontFamily("Consolas, Courier New, monospace"),
+            FontSize = 13,
+            TextWrapping = TextWrapping.NoWrap,
+            IsSpellCheckEnabled = false,
+            MinHeight = 320,
+            MinWidth = 580
+        };
+
+        var dlg = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = title,
+            Content = new ScrollViewer
+            {
+                Content = textBox,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MaxHeight = 480
+            },
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel"
+        };
+
+        var result = await dlg.ShowAsync();
+        return result == ContentDialogResult.Primary ? textBox.Text : null;
+    }
+
     public async Task<ExportProfilesResult?> ShowExportProfilesAsync(XamlRoot xamlRoot, IEnumerable<HostsProfile> profiles)
     {
         var profileList = profiles.OrderBy(p => p.IsDefault ? 0 : 1).ThenBy(p => p.FileName).ToList();

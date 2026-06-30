@@ -5,12 +5,6 @@ namespace HostsFileEditor;
 
 public class HostsProfileMetadata
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
-
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
@@ -63,7 +57,7 @@ public class HostsProfileMetadata
         try
         {
             var json = File.ReadAllText(sidecarPath);
-            return JsonSerializer.Deserialize<HostsProfileMetadata>(json, _jsonOptions);
+            return JsonSerializer.Deserialize(json, CoreJsonContext.Default.HostsProfileMetadata);
         }
         catch
         {
@@ -74,7 +68,7 @@ public class HostsProfileMetadata
     public void Save(string archiveFilePath)
     {
         var sidecarPath = GetSidecarPath(archiveFilePath);
-        var json = JsonSerializer.Serialize(this, _jsonOptions);
+        var json = JsonSerializer.Serialize(this, CoreJsonContext.Default.HostsProfileMetadata);
         File.WriteAllText(sidecarPath, json);
     }
 

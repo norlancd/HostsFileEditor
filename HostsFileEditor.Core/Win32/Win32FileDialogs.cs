@@ -39,11 +39,11 @@ public static partial class Win32FileDialogs
     private const int OFN_PATHMUSTEXIST = 0x00000800;
     private const int OFN_OVERWRITEPROMPT = 0x00000002;
 
-    [LibraryImport("comdlg32.dll", SetLastError = true)]
+    [LibraryImport("comdlg32.dll", EntryPoint = "GetOpenFileNameW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetOpenFileName(ref OPENFILENAME ofn);
 
-    [LibraryImport("comdlg32.dll", SetLastError = true)]
+    [LibraryImport("comdlg32.dll", EntryPoint = "GetSaveFileNameW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetSaveFileName(ref OPENFILENAME ofn);
 

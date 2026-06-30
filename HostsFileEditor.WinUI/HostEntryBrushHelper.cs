@@ -17,10 +17,10 @@ internal static class HostEntryBrushHelper
         if (entry.HasCommentOnly)
         {
             return GetFirstExistingBrush(
+                "SubtleFillColorSecondaryBrush",
                 "SystemFillColorNeutralBackgroundBrush",
-                "LayerFillColorTertiaryBrush",
-                "LayerFillColorDefaultBrush")
-                ?? new SolidColorBrush(Color.FromArgb(0xFF, 0xF0, 0xF0, 0xF0));
+                "LayerFillColorTertiaryBrush")
+                ?? new SolidColorBrush(Color.FromArgb(0x20, 0x80, 0x80, 0x80));
         }
 
         if (entry.Valid)

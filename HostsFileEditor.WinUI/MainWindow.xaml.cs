@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using Windows.System;
 using WinRT;
 using WinRT.Interop;
 
@@ -39,14 +40,6 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsBackEnabled => IsArchiveVisible;
 
     public Visibility ArchivesEmptyVisibility => Archives.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-    /// <summary>Bound to the "Profiles" MenuBarItem's Title, so the active profile is
-    /// visible at a glance without opening the menu.</summary>
-    public string ProfilesMenuTitle => _profileSwitcher.IsHostsDisabled
-        ? "Profiles: Disabled"
-        : _profileSwitcher.ActiveProfile is { IsDefault: false } active
-            ? $"Profiles: {active.FileName}"
-            : "Profiles: Default";
 
     public Visibility TimerStatusVisibility =>
         _rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed
@@ -92,6 +85,29 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     public Visibility ActiveFiltersBadgeVisibility => ActiveFilterCount > 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    // ── Profile indicator (DropDownButton, right of MenuBar) ────────────────────
+    public string StatusProfileLabel =>
+        _profileSwitcher.IsHostsDisabled ? "Hosts Disabled"
+        : _profileSwitcher.ActiveProfile is { IsDefault: false } p ? p.FileName
+        : "Default";
+
+    public bool IsTimerRunning =>
+        _rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed;
+
+    public Brush ProfileDotBrush
+    {
+        get
+        {
+            if (_profileSwitcher.IsHostsDisabled)
+                return StatusBarHelper.Dot(StatusBarHelper.DotColor.Red);
+            if (IsTimerRunning)
+                return StatusBarHelper.Dot(StatusBarHelper.DotColor.Yellow);
+            if (_profileSwitcher.ActiveProfile is { IsDefault: false })
+                return StatusBarHelper.Dot(StatusBarHelper.DotColor.Green);
+            return StatusBarHelper.Dot(StatusBarHelper.DotColor.Gray);
+        }
+    }
+
     private MicaController? _micaController;
     private SystemBackdropConfiguration? _backdropConfiguration;
     private Grid? _titleBarHost;
@@ -111,6 +127,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private readonly IProfileExportImportService _exportImportService;
     private HotkeyMessageHook? _hotkeyHook;
     private DispatcherTimer? _timerCountdownTick;
+    private DispatcherTimer? _notificationTimer;
 
     public MainWindow(
         DialogService dialogService, AnimationService animationService,
@@ -149,7 +166,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             setDuplicateEnabled: v => { if (DuplicateButton is not null) DuplicateButton.IsEnabled = v; },
             setMoveUpEnabled: v => { if (MoveUpButton is not null) MoveUpButton.IsEnabled = v; },
             setMoveDownEnabled: v => { if (MoveDownButton is not null) MoveDownButton.IsEnabled = v; },
-            setToggleEnabled: v => { if (ToggleButton is not null) ToggleButton.IsEnabled = v; },
+            setToggleEnabled: v => { },
             setCtxCopyVis: v => { if (CtxCopy is not null) CtxCopy.Visibility = v ? Visibility.Visible : Visibility.Collapsed; },
             setCtxCutVis: v => { if (CtxCut is not null) CtxCut.Visibility = v ? Visibility.Visible : Visibility.Collapsed; },
             setCtxPasteVis: v => { if (CtxPaste is not null) CtxPaste.Visibility = v ? Visibility.Visible : Visibility.Collapsed; },
@@ -237,8 +254,6 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFilterDisabledHidden));
         OnPropertyChanged(nameof(ActiveFilterCount));
         OnPropertyChanged(nameof(ActiveFiltersBadgeVisibility));
-        OnPropertyChanged(nameof(ProfilesMenuTitle));
-
         // Ensure buttons reflect current selection/state at startup
         _selectionService.UpdateSelectionDependentButtons();
         _selectionService.UpdateContextMenuItems();
@@ -259,7 +274,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnCoreEntriesListChanged(object? sender, ListChangedEventArgs e)
     {
-        // Use dispatcher to ensure UI-thread update and preserve selection when possible
+        // ItemChanged means a property on an existing item changed — x:Bind Mode=OneWay
+        // handles those updates automatically via INotifyPropertyChanged. Rebuilding the
+        // whole list on every keystroke causes visible lag, so we skip it here.
+        if (e.ListChangedType == ListChangedType.ItemChanged) return;
+
         _ = DispatcherQueue.TryEnqueue(() => RefreshEntries(preserveSelection: true));
     }
 
@@ -267,8 +286,16 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     {
         _ = DispatcherQueue.TryEnqueue(() =>
         {
-            OnPropertyChanged(nameof(ProfilesMenuTitle));
+            OnPropertyChanged(nameof(StatusProfileLabel));
+            OnPropertyChanged(nameof(ProfileDotBrush));
             RefreshArchives();
+
+            if (_profileSwitcher.IsHostsDisabled)
+                ShowNotification("Hosts file disabled.", InfoBarSeverity.Warning);
+            else if (_profileSwitcher.ActiveProfile is { IsDefault: false } p)
+                ShowNotification($"Switched to: {p.FileName}", InfoBarSeverity.Success);
+            else
+                ShowNotification("Switched to default profile.", InfoBarSeverity.Informational);
         });
     }
 
@@ -366,7 +393,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             RefreshTimerStatus();
-            RefreshProfileSwitcher();
+            QueueRefreshProfileSwitcher();
         });
     }
 
@@ -412,6 +439,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
     private async void OnArchiveTimerClick(object sender, RoutedEventArgs e)
     {
         if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        await ActivateWithTimerAsync(profile);
+    }
+
+    private async Task ActivateWithTimerAsync(HostsProfile profile)
+    {
         if (Content?.XamlRoot is not { } root) return;
 
         if (_rollbackTimerService.ActiveTimer?.Status is RollbackTimerStatus.Active or RollbackTimerStatus.Snoozed)
@@ -572,7 +604,11 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnSaveClick(object sender, RoutedEventArgs e) => _hostsFile.Save();
+    private void OnSaveClick(object sender, RoutedEventArgs e)
+    {
+        _hostsFile.Save();
+        ShowNotification("Hosts file saved.", InfoBarSeverity.Success);
+    }
 
     private void OnSaveAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
         => TryInvokeUnlessTextBox(() => OnSaveClick(this, new RoutedEventArgs()), args);
@@ -632,20 +668,28 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnMoveUpClick(object sender, RoutedEventArgs e)
     {
-        if (EntriesList.SelectedItems.Count > 0 && EntriesList.SelectedItem is HostsEntry lastSel)
-        {
-            _hostsFile.Entries.MoveBefore(EntriesList.SelectedItems.Cast<HostsEntry>(), lastSel);
-            RefreshEntries(true);
-        }
+        var selected = EntriesList.SelectedItems.Cast<HostsEntry>().ToList();
+        if (selected.Count == 0) return;
+
+        var entries = _hostsFile.Entries;
+        var topIndex = selected.Select(s => entries.IndexOf(s)).Where(i => i >= 0).DefaultIfEmpty(-1).Min();
+        if (topIndex <= 0) return;
+
+        entries.MoveBefore(selected, entries[topIndex - 1]);
+        RefreshEntries(true);
     }
 
     private void OnMoveDownClick(object sender, RoutedEventArgs e)
     {
-        if (EntriesList.SelectedItems.Count > 0 && EntriesList.SelectedItem is HostsEntry firstSel)
-        {
-            _hostsFile.Entries.MoveAfter(EntriesList.SelectedItems.Cast<HostsEntry>(), firstSel);
-            RefreshEntries(true);
-        }
+        var selected = EntriesList.SelectedItems.Cast<HostsEntry>().ToList();
+        if (selected.Count == 0) return;
+
+        var entries = _hostsFile.Entries;
+        var bottomIndex = selected.Select(s => entries.IndexOf(s)).Where(i => i >= 0).DefaultIfEmpty(-1).Max();
+        if (bottomIndex < 0 || bottomIndex >= entries.Count - 1) return;
+
+        entries.MoveAfter(selected, entries[bottomIndex + 1]);
+        RefreshEntries(true);
     }
 
     private void OnDeleteClick(object sender, RoutedEventArgs e)
@@ -843,6 +887,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         {
             _hostsFile.SaveAsProfile(name.Trim());
             RefreshArchives();
+            ShowNotification($"Profile saved: {name.Trim()}", InfoBarSeverity.Success);
         }
     }
 
@@ -860,6 +905,7 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _profileList.Add(profile);
 
         RefreshArchives();
+        ShowNotification($"Profile created: {name.Trim()}", InfoBarSeverity.Success);
     }
 
     private async void OnArchiveLoadClick(object sender, RoutedEventArgs e)
@@ -873,30 +919,42 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnArchiveDeleteClick(object sender, RoutedEventArgs e)
     {
-        if (ArchiveList.SelectedItem is HostsProfile archive)
+        if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        if (profile.IsDefault) return;
+        await DeleteProfileAsync(profile);
+    }
+
+    private async Task DeleteProfileAsync(HostsProfile profile)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+
+        bool isActive = _profileSwitcher.ActiveProfile == profile;
+        var prompt = isActive
+            ? $"Delete profile '{profile.FileName}'?\n\nIt's currently active — the hosts file will be reset to Default."
+            : $"Delete profile '{profile.FileName}'?";
+
+        var confirmed = await _dialogService.ShowConfirmationAsync(root, "Delete Profile", prompt, "Delete", "Cancel");
+        if (!confirmed) return;
+
+        if (isActive)
         {
-            if (archive.IsDefault) return; // Default can't be deleted, mirrors WinForm
-
-            bool wasActive = _profileSwitcher.ActiveProfile == archive;
-
-            _profileList.Delete(archive);
-            RefreshArchives();
-
-            // Deleting the file out from under the active profile would otherwise leave
-            // the grid showing an orphaned copy of content that no longer corresponds to
-            // anything — reset to Default instead.
-            if (wasActive)
-            {
-                var defaultProfile = _profileList.FirstOrDefault(p => p.IsDefault);
-                if (defaultProfile != null)
-                    await _profileSwitcher.ActivateAsync(defaultProfile, ProfileSwitcher.TriggerSource.TrayMenu);
-            }
+            var defaultProfile = _profileList.FirstOrDefault(p => p.IsDefault);
+            if (defaultProfile != null)
+                await _profileSwitcher.ActivateAsync(defaultProfile, ProfileSwitcher.TriggerSource.TrayMenu);
         }
+
+        _profileList.Delete(profile);
+        RefreshArchives();
     }
 
     private async void OnArchiveSettingsClick(object sender, RoutedEventArgs e)
     {
         if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        await ShowProfileSettingsAsync(profile);
+    }
+
+    private async Task ShowProfileSettingsAsync(HostsProfile profile)
+    {
         if (Content?.XamlRoot is not { } root) return;
 
         var metadata = profile.Metadata;
@@ -907,9 +965,6 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         if (result is null) return;
 
-        // Attempt the registration now, so a conflict — with another profile or some
-        // other application's global hotkey — is reported right here instead of via
-        // a notification after this dialog has already closed.
         if (!_hotkeyRegistry.TryAssignHotkey(profile, result.HotkeyModifiers, result.HotkeyKey, out var error))
         {
             await _dialogService.ShowErrorAsync(root, "Hotkey Conflict", error ?? "Could not assign that hotkey.");
@@ -929,6 +984,62 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         profile.ReloadMetadata();
 
         RefreshArchives();
+    }
+
+    private async Task CloneProfileAsync(HostsProfile source)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+
+        var name = await _dialogService.ShowInputAsync(root, $"Clone — {source.FileName}", "New profile name", "OK", "Cancel");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            var destProfile = new HostsProfile(name.Trim());
+            if (File.Exists(destProfile.FilePath))
+            {
+                await _dialogService.ShowErrorAsync(root, "Clone", $"A profile named \"{destProfile.FileName}\" already exists.");
+                return;
+            }
+
+            File.Copy(source.FilePath, destProfile.FilePath);
+            _profileList.Add(destProfile);
+            RefreshArchives();
+
+            await _profileSwitcher.ActivateAsync(destProfile, ProfileSwitcher.TriggerSource.TrayMenu);
+        }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Clone Failed", ex.Message);
+        }
+    }
+
+    private async Task RawEditProfileAsync(HostsProfile profile)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+
+        if (!File.Exists(profile.FilePath))
+        {
+            await _dialogService.ShowErrorAsync(root, "Raw Edit", $"Profile file not found:\n{profile.FilePath}");
+            return;
+        }
+
+        string content;
+        try { content = File.ReadAllText(profile.FilePath); }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Raw Edit", $"Could not read profile:\n{ex.Message}");
+            return;
+        }
+
+        var newContent = await _dialogService.ShowRawEditAsync(root, $"Raw Edit — {profile.FileName}", content);
+        if (newContent is null) return;
+
+        try { File.WriteAllText(profile.FilePath, newContent); }
+        catch (Exception ex)
+        {
+            await _dialogService.ShowErrorAsync(root, "Raw Edit", $"Could not save:\n{ex.Message}");
+        }
     }
 
     private async void OnViewArchiveClick(object sender, RoutedEventArgs e)
@@ -1079,6 +1190,8 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _selectionService.UpdateContextMenuItems();
     }
 
+    private bool _profileSwitcherRebuildQueued;
+
     private void RefreshArchives()
     {
         Archives.Clear();
@@ -1087,25 +1200,54 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             Archives.Add(a);
         }
         OnPropertyChanged(nameof(ArchivesEmptyVisibility));
-        RefreshProfileSwitcher();
+        QueueRefreshProfileSwitcher();
     }
 
-    /// <summary>
-    /// Rebuilds the always-visible "Profiles" top-level menu — the quick way to
-    /// switch profiles without opening the Profiles management panel.
-    /// </summary>
+    private void QueueRefreshProfileSwitcher()
+    {
+        if (_profileSwitcherRebuildQueued) return;
+        _profileSwitcherRebuildQueued = true;
+        _ = DispatcherQueue.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () => { _profileSwitcherRebuildQueued = false; RefreshProfileSwitcher(); });
+    }
+
+    // File, Edit, View, Profiles (index 3), Settings, Help
+    private const int ProfilesMenuBarIndex = 3;
+
     private void RefreshProfileSwitcher()
     {
-        if (ProfilesMenuBarItem is null) return;
+        // Populate the title bar DropDownButton flyout
+        if (ProfileDropButton?.Flyout is MenuFlyout dropFlyout)
+            PopulateProfileMenuItems(dropFlyout.Items);
 
-        var items = ProfilesMenuBarItem.Items;
+        // Swap the MenuBar "Profiles" item (clear+repopulate on a MenuBarItem causes
+        // WinUI to ghost old items over new ones after the flyout has been opened once;
+        // replacing the whole node avoids that visual bug).
+        if (MainMenuBar is not null)
+        {
+            var newItem = new MenuBarItem { Title = "Profiles" };
+            PopulateProfileMenuItems(newItem.Items);
+            if (MainMenuBar.Items.Count > ProfilesMenuBarIndex)
+                MainMenuBar.Items.RemoveAt(ProfilesMenuBarIndex);
+            MainMenuBar.Items.Insert(ProfilesMenuBarIndex, newItem);
+        }
+
+        OnPropertyChanged(nameof(StatusProfileLabel));
+        OnPropertyChanged(nameof(ProfileDotBrush));
+    }
+
+    private void PopulateProfileMenuItems(IList<MenuFlyoutItemBase> items)
+    {
         items.Clear();
 
-        var saveCurrentItem = new MenuFlyoutItem { Text = "Save Current as Profile…" };
+        bool hostsDisabled = _profileSwitcher.IsHostsDisabled;
+
+        var saveCurrentItem = new MenuFlyoutItem { Text = "Save Current as Profile…", IsEnabled = !hostsDisabled };
         saveCurrentItem.Click += OnArchiveClick;
         items.Add(saveCurrentItem);
 
-        var newEmptyItem = new MenuFlyoutItem { Text = "New Empty Profile…" };
+        var newEmptyItem = new MenuFlyoutItem { Text = "New Empty Profile…", IsEnabled = !hostsDisabled };
         newEmptyItem.Click += OnNewEmptyProfileClick;
         items.Add(newEmptyItem);
 
@@ -1120,35 +1262,81 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         items.Add(new MenuFlyoutSeparator());
 
         var defaultProfile = Archives.FirstOrDefault(p => p.IsDefault);
-        bool isDefaultActive = defaultProfile != null && _profileSwitcher.ActiveProfile == defaultProfile && !_profileSwitcher.IsHostsDisabled;
+        bool isDefaultActive = defaultProfile != null && _profileSwitcher.ActiveProfile == defaultProfile && !hostsDisabled;
         if (defaultProfile != null)
         {
-            items.Add(BuildProfileSwitcherItem(defaultProfile, isDefaultActive));
+            items.Add(BuildProfileMenuItem(defaultProfile, isDefaultActive, includeDelete: false));
             items.Add(new MenuFlyoutSeparator());
         }
 
         foreach (var profile in Archives.Where(p => !p.IsDefault))
         {
-            bool isActive = _profileSwitcher.ActiveProfile == profile && !_profileSwitcher.IsHostsDisabled;
-            items.Add(BuildProfileSwitcherItem(profile, isActive));
+            bool isActive = _profileSwitcher.ActiveProfile == profile && !hostsDisabled;
+            items.Add(BuildProfileMenuItem(profile, isActive, includeDelete: true));
         }
 
         items.Add(new MenuFlyoutSeparator());
-        var disableItem = new ToggleMenuFlyoutItem { Text = "Hosts File Disabled", IsChecked = _profileSwitcher.IsHostsDisabled };
+        var disableItem = new ToggleMenuFlyoutItem { Text = "Hosts File Disabled", IsChecked = hostsDisabled };
         disableItem.Click += OnHostsDisabledToggleClick;
         items.Add(disableItem);
     }
 
-    private RadioMenuFlyoutItem BuildProfileSwitcherItem(HostsProfile profile, bool isActive)
+    private MenuFlyoutSubItem BuildProfileMenuItem(HostsProfile profile, bool isActive, bool includeDelete)
     {
-        var item = new RadioMenuFlyoutItem
+        var meta = profile.Metadata;
+        var label = profile.IsDefault ? "Default" : profile.FileName;
+        if (meta?.HasHotkey == true)
+            label += $"  ({FormatHotkeyChord(meta.HotkeyModifiers, meta.HotkeyKey)})";
+        if (isActive)
+            label += "  ✓";
+
+        var sub = new MenuFlyoutSubItem { Text = label };
+
+        bool profileExists = File.Exists(profile.FilePath);
+
+        var activateItem = new MenuFlyoutItem { Text = isActive ? "Reload" : "Activate", IsEnabled = profileExists };
+        activateItem.Click += async (_, _) => await _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu);
+        sub.Items.Add(activateItem);
+
+        // Always shown (matches WinForm), but disabled for the currently active profile
+        // since there is nothing to "temporarily switch to" when you're already on it.
+        var timerItem = new MenuFlyoutItem { Text = "Activate Temporarily…", IsEnabled = profileExists && !isActive };
+        timerItem.Click += async (_, _) => await ActivateWithTimerAsync(profile);
+        sub.Items.Add(timerItem);
+
+        sub.Items.Add(new MenuFlyoutSeparator());
+
+        var cloneItem = new MenuFlyoutItem { Text = "Clone…" };
+        cloneItem.Click += async (_, _) => await CloneProfileAsync(profile);
+        sub.Items.Add(cloneItem);
+
+        var rawEditItem = new MenuFlyoutItem { Text = "Raw Edit…" };
+        rawEditItem.Click += async (_, _) => await RawEditProfileAsync(profile);
+        sub.Items.Add(rawEditItem);
+
+        var settingsItem = new MenuFlyoutItem { Text = "Profile Settings…" };
+        settingsItem.Click += async (_, _) => await ShowProfileSettingsAsync(profile);
+        sub.Items.Add(settingsItem);
+
+        if (includeDelete)
         {
-            Text = profile.IsDefault ? "Default" : profile.FileName,
-            GroupName = "ProfileSwitcher",
-            IsChecked = isActive
-        };
-        item.Click += async (_, _) => await _profileSwitcher.ActivateAsync(profile, ProfileSwitcher.TriggerSource.TrayMenu);
-        return item;
+            sub.Items.Add(new MenuFlyoutSeparator());
+            var deleteItem = new MenuFlyoutItem { Text = "Delete" };
+            deleteItem.Click += async (_, _) => await DeleteProfileAsync(profile);
+            sub.Items.Add(deleteItem);
+        }
+
+        return sub;
+    }
+
+    private static string FormatHotkeyChord(int modifiers, int key)
+    {
+        var parts = new List<string>();
+        if ((modifiers & 2) != 0) parts.Add("Ctrl");
+        if ((modifiers & 4) != 0) parts.Add("Shift");
+        if ((modifiers & 1) != 0) parts.Add("Alt");
+        parts.Add(((VirtualKey)key).ToString());
+        return string.Join("+", parts);
     }
 
     private async void OnHostsDisabledToggleClick(object sender, RoutedEventArgs e)
@@ -1229,11 +1417,15 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
 
         RefreshArchives();
 
-        var successMsg = $"Imported {fileNamesToImport.Count} profile(s).";
         if (notes.Count > 0)
-            successMsg += "\n\n" + string.Join("\n\n", notes);
-
-        await _dialogService.ShowErrorAsync(root, "Import Complete", successMsg);
+        {
+            var successMsg = $"Imported {fileNamesToImport.Count} profile(s).\n\n" + string.Join("\n\n", notes);
+            await _dialogService.ShowErrorAsync(root, "Import Complete", successMsg);
+        }
+        else
+        {
+            ShowNotification($"Imported {fileNamesToImport.Count} profile(s).", InfoBarSeverity.Success);
+        }
     }
 
     private void OnPropertyChanged(string propertyName)
@@ -1274,6 +1466,32 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
         _selectionService.UpdateContextMenuItems();
     }
 
+    private void OnEntriesListGotFocus(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject child) return;
+        var item = FindListViewItemAncestor(child);
+        if (item is null) return;
+
+        var idx = EntriesList.IndexFromContainer(item);
+        if (idx < 0) return;
+
+        // Select the row if it isn't already part of the current selection,
+        // so toolbar buttons (Move Up/Down, Delete…) activate immediately on focus.
+        if (!EntriesList.SelectedItems.Contains(EntriesList.Items[idx]))
+            EntriesList.SelectedIndex = idx;
+    }
+
+    private static ListViewItem? FindListViewItemAncestor(DependencyObject obj)
+    {
+        var current = VisualTreeHelper.GetParent(obj);
+        while (current is not null)
+        {
+            if (current is ListViewItem lvi) return lvi;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
     private void OnArchiveSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ArchiveList is not null)
@@ -1282,8 +1500,59 @@ public sealed partial class MainWindow : Window, INotifyPropertyChanged
             bool isActive = selected != null && _profileSwitcher.ActiveProfile == selected && !_profileSwitcher.IsHostsDisabled;
             if (ArchiveLoadButton is not null) ArchiveLoadButton.IsEnabled = selected is not null;
             if (ArchiveTimerButton is not null) ArchiveTimerButton.IsEnabled = selected is not null && !isActive;
+            if (ArchiveCloneButton is not null) ArchiveCloneButton.IsEnabled = selected is not null;
             if (ArchiveDeleteButton is not null) ArchiveDeleteButton.IsEnabled = selected is { IsDefault: false };
             if (ArchiveSettingsButton is not null) ArchiveSettingsButton.IsEnabled = selected is not null;
         }
+    }
+
+    private async void OnArchiveCloneClick(object sender, RoutedEventArgs e)
+    {
+        if (ArchiveList.SelectedItem is not HostsProfile profile) return;
+        await CloneProfileAsync(profile);
+    }
+
+    private void OnExitClick(object sender, RoutedEventArgs e)
+        => Application.Current.Exit();
+
+    private async void OnAuditLogClick(object sender, RoutedEventArgs e)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+        var entries = _auditLogger.ReadEntries().ToList();
+        if (entries.Count == 0)
+        {
+            await _dialogService.ShowErrorAsync(root, "Audit Log", "No audit log entries found.");
+            return;
+        }
+
+        var text = string.Join(Environment.NewLine,
+            entries.Select(entry =>
+                $"[{entry.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss}]  {entry.Action,-30}  {entry.Source}"));
+        await _dialogService.ShowRawEditAsync(root, "Audit Log", text);
+    }
+
+    private async void OnAboutClick(object sender, RoutedEventArgs e)
+    {
+        if (Content?.XamlRoot is not { } root) return;
+        var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "—";
+        await _dialogService.ShowErrorAsync(root, "About Hosts File Editor",
+            $"Hosts File Editor  v{version}\n\nEdit and manage your Windows hosts file with profiles, rollback timers, and audit logging.");
+    }
+
+    private void ShowNotification(string message, InfoBarSeverity severity = InfoBarSeverity.Informational)
+    {
+        if (NotificationBar is null) return;
+        NotificationBar.Message = message;
+        NotificationBar.Severity = severity;
+        NotificationBar.IsOpen = true;
+
+        _notificationTimer?.Stop();
+        _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _notificationTimer.Tick += (_, _) =>
+        {
+            NotificationBar.IsOpen = false;
+            _notificationTimer?.Stop();
+        };
+        _notificationTimer.Start();
     }
 }

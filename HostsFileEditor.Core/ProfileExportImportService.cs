@@ -12,12 +12,6 @@ public sealed class ProfileExportImportService : IProfileExportImportService
 {
     private const string ManifestEntryName = "manifest.json";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly IHostsProfileList _profileList;
     private readonly IAuditLogger _auditLogger;
 
@@ -124,7 +118,7 @@ public sealed class ProfileExportImportService : IProfileExportImportService
             if (sidecarEntry != null)
             {
                 using var reader = new StreamReader(sidecarEntry.Open());
-                var importedMetadata = JsonSerializer.Deserialize<HostsProfileMetadata>(reader.ReadToEnd(), JsonOptions);
+                var importedMetadata = JsonSerializer.Deserialize(reader.ReadToEnd(), CoreJsonContext.Default.HostsProfileMetadata);
                 if (importedMetadata != null)
                 {
                     metadata.Color = importedMetadata.Color;
@@ -182,7 +176,7 @@ public sealed class ProfileExportImportService : IProfileExportImportService
 
         using var reader = new StreamReader(entry.Open());
         var json = reader.ReadToEnd();
-        return JsonSerializer.Deserialize<ProfileExportManifest>(json, JsonOptions)
+        return JsonSerializer.Deserialize(json, CoreJsonContext.Default.ProfileExportManifest)
             ?? throw new InvalidDataException("Could not read manifest.json.");
     }
 
@@ -208,6 +202,6 @@ public sealed class ProfileExportImportService : IProfileExportImportService
     {
         var entry = zip.CreateEntry(entryName);
         using var writer = new StreamWriter(entry.Open());
-        writer.Write(JsonSerializer.Serialize(value, JsonOptions));
+        writer.Write(JsonSerializer.Serialize(value, typeof(T), CoreJsonContext.Default));
     }
 }
