@@ -45,6 +45,7 @@
     </Content>
     <Content Include="Assets\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="HostsFileEditor.ico" />
   </ItemGroup>
@@ -52,11 +53,7 @@
     <MakeDir Directories="$(MSBuildProjectDirectory)\..\artifacts" Condition="!Exists('$(MSBuildProjectDirectory)\..\artifacts')" />
   </Target>
   <Target Name="CleanCustomDirectories" AfterTargets="Clean">
-    <ItemGroup>
-      <BinFiles Include="$(MSBuildProjectDirectory)\..\artifacts\*.*" />
-    </ItemGroup>
-    <Delete Files="@(BinFiles)" />
-    <RemoveDir Directories="$(MSBuildProjectDirectory)\..\artifacts" Condition="Exists('$(MSBuildProjectDirectory)\..\artifacts')" />
-    <Message Text="Cleaned all build artifacts directory" Importance="high" />
+    <RemoveDir Directories="$(OutputPackagingDir)" Condition="Exists('$(OutputPackagingDir)')" />
+    <Message Text="Cleaned $(OutputPackagingDir)" Importance="high" />
   </Target>
 </Project>

@@ -22,9 +22,10 @@
     <ApplicationIcon>Assets\HostsFileEditor.ico</ApplicationIcon>
     <PackagingFlavor>modern</PackagingFlavor>
     <OutputPackagingDir>$(MSBuildProjectDirectory)\..\artifacts\modern\</OutputPackagingDir>
-    <CreatePublishZip>false</CreatePublishZip>
+    <CreatePublishZip>true</CreatePublishZip>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="7ZipCLI" GeneratePathProperty="true" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.WindowsAppSDK" />
   </ItemGroup>

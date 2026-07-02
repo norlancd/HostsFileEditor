@@ -65,6 +65,64 @@
     </Task>
   </UsingTask>
 
+  <!-- Inline task: run an external tool as a direct child process (no cmd.exe intermediary).
+       signtool/makeappx invoked via MSBuild's <Exec> (which always wraps the command in a temp
+       cmd.exe /Q /D /C script) intermittently hung indefinitely at ~0% CPU right when makeappx started -
+       every single hang observed involved that cmd.exe hop, and running the exact same tool directly
+       (no cmd.exe) was reliable every time. This task runs the process directly via
+       System.Diagnostics.Process instead. -->
+  <UsingTask TaskName="RunProcess"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <FileName ParameterType="System.String" Required="true" />
+      <Arguments ParameterType="System.String" Required="false" />
+      <WorkingDirectory ParameterType="System.String" Required="false" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Diagnostics" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+#pragma warning disable 0162
+        var psi = new ProcessStartInfo
+        {
+            FileName = FileName,
+            Arguments = Arguments ?? string.Empty,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            // Redirect stdin and close it immediately below: any tool that tries to prompt (e.g. makeappx
+            // asking to overwrite) then gets EOF and errors out fast instead of blocking on input forever.
+            RedirectStandardInput = true,
+        };
+        if (!string.IsNullOrEmpty(WorkingDirectory))
+        {
+            psi.WorkingDirectory = WorkingDirectory;
+        }
+
+        using (var proc = new Process())
+        {
+            proc.StartInfo = psi;
+            proc.OutputDataReceived += (s, e) => { if (e.Data != null) Log.LogMessage(MessageImportance.High, e.Data); };
+            proc.ErrorDataReceived += (s, e) => { if (e.Data != null) Log.LogMessage(MessageImportance.High, e.Data); };
+            proc.Start();
+            proc.StandardInput.Close();
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+            proc.WaitForExit();
+
+            if (proc.ExitCode != 0)
+            {
+                Log.LogError(FileName + " exited with code " + proc.ExitCode);
+                return false;
+            }
+        }
+        return true;
+      ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
   <!-- Resolve tool paths (signtool / makeappx) when not already resolvable via PATH -->
   <Target Name="_ResolvePackagingTools" BeforeTargets="SignAndPackage">
 
@@ -144,42 +202,96 @@
     <MakeDir Directories="$(_PackagedOutputStampDir)" Condition="!Exists('$(_PackagedOutputStampDir)')" />
   </Target>
 
-  <!-- Main packaging target now incremental: Inputs/Outputs allow MSBuild to skip when unchanged. -->
+  <!-- Main packaging target now incremental: Inputs/Outputs allow MSBuild to skip when unchanged.
+       Outputs points at the stamp file (not the local publish-dir .msix) because Clean only removes the
+       stamp; using the .msix as the marker let a stale-but-present publish-dir .msix cause this target
+       (including the copy to OutputPackagingDir) to be skipped even right after a Clean emptied artifacts\. -->
   <Target Name="SignAndPackage"
+          Condition="'$(SkipMsixPackaging)' != 'true'"
           DependsOnTargets="_ResolvePackagingTools"
           AfterTargets="Publish"
           Inputs="@(ResolvedFileToPublish)"
-          Outputs="$(ProjectDir)$(PublishDir)$(AssemblyName).msix">
+          Outputs="$(_PackagedOutputStampDir)$(ProjectName).stamp">
     <PropertyGroup>
       <_EffectivePublishDir>$(ProjectDir)$(PublishDir)</_EffectivePublishDir>
       <MsixFile>$(_EffectivePublishDir)$(AssemblyName).msix</MsixFile>
       <PublishZipFile>$(AssemblyName).zip</PublishZipFile>
+      <!-- Clean, project-local staging dir we assemble the exact package payload into. -->
+      <_MsixStageDir>$(BaseIntermediateOutputPath)msix-stage\</_MsixStageDir>
       <_Now>$([System.DateTime]::UtcNow.ToString("o"))</_Now>
     </PropertyGroup>
 
-    <ItemGroup Condition="'$(Configuration)' == 'Release'">
-      <_PublishedFiles Include="$(_EffectivePublishDir)**\*.*" Exclude="$(_EffectivePublishDir)**\*.pdb" />
+    <!-- Assemble the package payload in a clean staging dir instead of packing the live publish dir
+         in place. The live publish dir is unreliable as a package source: it accumulates generated
+         artifacts across runs (the previous .msix, the -portable exe, the .zip - all of which makeappx
+         would otherwise bake into the new .msix), and an incremental `dotnet publish` silently drops the
+         Assets\*.png logos (and dll.config) it deems up-to-date, so makeappx then fails manifest
+         validation because the declared logos aren't in the package.
+         Runtime files are copied from the publish dir - it always has the correct final executable,
+         including the single-file-bundled exe (WinForm); @(ResolvedFileToPublish) can't be used for this
+         because for single-file publishes it lists the pre-bundle managed dlls, not the bundled exe.
+         Generated artifacts and pdbs are excluded. -->
+    <RemoveDir Directories="$(_MsixStageDir)" />
+    <MakeDir Directories="$(_MsixStageDir)" />
+    <ItemGroup>
+      <_MsixPayload Include="$(_EffectivePublishDir)**\*.*"
+                    Exclude="$(_EffectivePublishDir)**\*.pdb;$(_EffectivePublishDir)**\*.msix;$(_EffectivePublishDir)**\*.zip;$(_EffectivePublishDir)$(AssemblyName)-portable.exe;$(_EffectivePublishDir)AppxManifest.xml;$(_EffectivePublishDir)Assets\**\*.*" />
     </ItemGroup>
-    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-      <_PublishedFiles Include="$(_EffectivePublishDir)**\*.*" />
+    <Copy SourceFiles="@(_MsixPayload)"
+          DestinationFiles="@(_MsixPayload->'$(_MsixStageDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <!-- Manifest + Assets are always sourced from the project, since the incremental publish is what
+         drops them from the publish dir in the first place. -->
+    <Copy SourceFiles="$(ProjectDir)AppxManifest.xml" DestinationFolder="$(_MsixStageDir)" Condition="Exists('$(ProjectDir)AppxManifest.xml')" />
+    <ItemGroup>
+      <_AssetFiles Include="$(ProjectDir)Assets\**\*.*" />
     </ItemGroup>
+    <Copy Condition="'@(_AssetFiles)' != ''"
+          SourceFiles="@(_AssetFiles)"
+          DestinationFiles="@(_AssetFiles->'$(_MsixStageDir)Assets\%(RecursiveDir)%(Filename)%(Extension)')" />
 
-    <!-- Ensure manifest is present (redundant if CopyToPublishDirectory worked, but defensive) -->
-    <Copy SourceFiles="$(ProjectDir)AppxManifest.xml" DestinationFolder="$(_EffectivePublishDir)" SkipUnchangedFiles="true" Condition="Exists('$(ProjectDir)AppxManifest.xml')" />
+    <!-- Sign EXE (in staging) if enabled and exists -->
+    <RunProcess Condition="'$(EnableSigning)'=='true' AND Exists('$(_MsixStageDir)$(AssemblyName).exe')"
+                FileName="$(SignToolExe)"
+                Arguments="sign /fd SHA256 /f &quot;$(CertFile)&quot; /p &quot;$(CertPassword)&quot; /t http://timestamp.digicert.com &quot;$(_MsixStageDir)$(AssemblyName).exe&quot;" />
 
-    <!-- Sign EXE if enabled and exists -->
-    <Exec Condition="'$(EnableSigning)'=='true' AND Exists('$(_EffectivePublishDir)$(AssemblyName).exe')" Command="&quot;$(SignToolExe)&quot; sign /fd SHA256 /f &quot;$(CertFile)&quot; /p &quot;$(CertPassword)&quot; /t http://timestamp.digicert.com &quot;$(_EffectivePublishDir)$(AssemblyName).exe&quot;" />
-
-    <!-- Create MSIX -->
-    <Exec Condition="Exists('$(_EffectivePublishDir)')" Command="&quot;$(MakeAppxExe)&quot; pack /d &quot;$(_EffectivePublishDir.TrimEnd('\\'))&quot; /p &quot;$(MsixFile)&quot;" />
+    <!-- Create MSIX from the staging dir. /o (overwrite) is mandatory: without it makeappx prompts
+         "output file exists, overwrite? (y/n)" whenever the target .msix is already present, and with no
+         console stdin it blocks forever - this was the real cause of the packaging "hang". -->
+    <RunProcess Condition="Exists('$(_MsixStageDir)')"
+                FileName="$(MakeAppxExe)"
+                Arguments="pack /o /d &quot;$(_MsixStageDir.TrimEnd('\\'))&quot; /p &quot;$(MsixFile)&quot;" />
 
     <!-- Sign MSIX -->
-    <Exec Condition="'$(EnableSigning)'=='true' AND Exists('$(MsixFile)')" Command="&quot;$(SignToolExe)&quot; sign /fd SHA256 /a /f &quot;$(CertFile)&quot; /p &quot;$(CertPassword)&quot; &quot;$(MsixFile)&quot;" />
+    <RunProcess Condition="'$(EnableSigning)'=='true' AND Exists('$(MsixFile)')"
+                FileName="$(SignToolExe)"
+                Arguments="sign /fd SHA256 /a /f &quot;$(CertFile)&quot; /p &quot;$(CertPassword)&quot; &quot;$(MsixFile)&quot;" />
 
-    <!-- Optionally ZIP (only when CreatePublishZip true) -->
-    <Exec Condition="'$(CreatePublishZip)'=='true'" Command="cd /d &quot;$(_EffectivePublishDir)&quot; &amp;&amp; &quot;$(Pkg7ZipCLI)\tools\7za.exe&quot; a -tzip -aoa &quot;$(PublishZipFile)&quot; *.exe" />
+    <!-- Optionally ZIP (only when CreatePublishZip true), built from the staging dir too.
+         Single-file publishes (PublishSingleFile=true, e.g. WinForm) rename the sole exe to a -portable
+         suffix so the zip's contents are self-explanatory without the msix/install context, then zip just
+         that file. The rename copy happens AFTER makeappx so the -portable exe is never baked into the msix.
+         Non-single-file publishes (e.g. WinUI, which ships WebView2/App SDK dlls alongside the exe) must
+         keep the exe's original name - an unpackaged WinUI/WinAppSDK app loads its .pri resource file by
+         the running exe's own module name, so renaming it makes the app crash on launch with
+         STATUS_RESOURCE_DATA_NOT_FOUND. Zip every runtime file (not just the exe) or the app won't have
+         what it needs to launch at all. The staging dir has no pdb/msix/zip, so only manifest+assets are
+         excluded. The archive is written to the publish dir where the copy-out step below looks for it. -->
+    <Copy Condition="'$(CreatePublishZip)'=='true' AND '$(PublishSingleFile)'=='true' AND Exists('$(_MsixStageDir)$(AssemblyName).exe')"
+          SourceFiles="$(_MsixStageDir)$(AssemblyName).exe"
+          DestinationFiles="$(_MsixStageDir)$(AssemblyName)-portable.exe" />
+    <RunProcess Condition="'$(CreatePublishZip)'=='true' AND '$(PublishSingleFile)'=='true'"
+                FileName="$(Pkg7ZipCLI)\tools\7za.exe"
+                Arguments="a -tzip -aoa &quot;$(_EffectivePublishDir)$(PublishZipFile)&quot; &quot;$(AssemblyName)-portable.exe&quot;"
+                WorkingDirectory="$(_MsixStageDir)" />
+    <RunProcess Condition="'$(CreatePublishZip)'=='true' AND '$(PublishSingleFile)'!='true'"
+                FileName="$(Pkg7ZipCLI)\tools\7za.exe"
+                Arguments="a -tzip -aoa &quot;$(_EffectivePublishDir)$(PublishZipFile)&quot; * -x!*.pdb -x!*.msix -x!*.zip -x!AppxManifest.xml -x!Assets"
+                WorkingDirectory="$(_MsixStageDir)" />
 
-    <!-- Add msix/zip artifacts explicitly so they get copied -->
+    <!-- Only the final, standalone deliverables (msix/zip) get copied out - not the loose publish-dir
+         files (manifest, assets, raw exe) - so the output directory isn't cluttered with files that look
+         like artifacts but aren't runnable/distributable on their own. -->
     <ItemGroup>
       <_PublishedFiles Include="$(MsixFile)" Condition="Exists('$(MsixFile)')" />
       <_PublishedFiles Include="$(_EffectivePublishDir)$(PublishZipFile)" Condition="'$(CreatePublishZip)'=='true' AND Exists('$(_EffectivePublishDir)$(PublishZipFile)')" />
@@ -196,15 +308,19 @@
     <Message Text="Packaged $(ProjectName) to $(OutputPackagingDir) (Files: @(_PublishedFiles->Count()))" Importance="high" />
   </Target>
 
-  <!-- Participate in Clean: remove copied outputs and stamp -->
+  <!-- Participate in Clean: remove copied outputs and stamp.
+       Uses a bin\**\ wildcard (not $(PublishDir)) because $(PublishDir) doesn't reliably include the
+       RID-specific publish subfolder here, which previously left a stale .msix behind after Clean -
+       causing SignAndPackage's Inputs/Outputs check to treat the next publish as already up to date. -->
   <Target Name="_CleanSignAndPackage" AfterTargets="Clean">
     <ItemGroup>
       <_StampFiles Include="$(_PackagedOutputStampDir)*.stamp" />
     </ItemGroup>
     <Delete Files="@(_StampFiles)" />
     <ItemGroup>
-      <_GeneratedArtifacts Include="$(PublishDir)$(AssemblyName).msix" />
-      <_GeneratedArtifacts Include="$(PublishDir)$(AssemblyName).zip" Condition="'$(CreatePublishZip)'=='true'" />
+      <_GeneratedArtifacts Include="$(ProjectDir)bin\**\$(AssemblyName).msix" />
+      <_GeneratedArtifacts Include="$(ProjectDir)bin\**\$(AssemblyName).zip" Condition="'$(CreatePublishZip)'=='true'" />
+      <_GeneratedArtifacts Include="$(ProjectDir)bin\**\$(AssemblyName)-portable.exe" Condition="'$(CreatePublishZip)'=='true'" />
     </ItemGroup>
     <Delete Files="@(_GeneratedArtifacts)" />
   </Target>
